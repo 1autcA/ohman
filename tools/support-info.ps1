@@ -29,6 +29,9 @@ $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIde
 L ""; L ("BIOS queries (read-only)" + $(if (-not $elevated) { " - SKIPPED, run as administrator to include them" } else { "" }))
 if ($elevated) {
     try {
+        # Get-WmiObject, not Get-CimInstance: the calls below are ManagementObject's GetMethodParameters and
+        # InvokeMethod, which a CimInstance does not have. It is legacy but present in Windows PowerShell 5.1,
+        # which is what the .cmd launches. (wmic.exe is the thing that is gone on 24H2+, not this.)
         $intf = Get-WmiObject -Namespace root\wmi -Class hpqBIntM | Select-Object -First 1
         function Q($type, $data, $outSize) {
             $in = ([wmiclass]"root\wmi:hpqBDataIn").CreateInstance()

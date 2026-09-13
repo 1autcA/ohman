@@ -91,7 +91,7 @@ Board `8EEC` is a 2026 machine that still reports v0, so this is not only an old
 Open Ohman and look at the top right of **Settings**, or run:
 
 ```
-wmic baseboard get product
+(Get-CimInstance Win32_BaseBoard).Product
 ```
 
 ## Verifying your laptop

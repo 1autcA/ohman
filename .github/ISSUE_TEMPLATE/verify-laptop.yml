@@ -21,7 +21,7 @@ body:
     id: board
     attributes:
       label: Board id
-      description: Settings in Ohman, top right, or `wmic baseboard get product`
+      description: Settings in Ohman, top right, or `(Get-CimInstance Win32_BaseBoard).Product` in PowerShell
       placeholder: 8BAA
     validations:
       required: true

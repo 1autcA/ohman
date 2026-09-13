@@ -390,7 +390,7 @@ footer p{margin:0 0 8px}
         </tbody>
       </table>
       </div>
-      <p class="note">Your board id is in Ohman under Settings, or from <code>wmic baseboard get product</code>. A board that is not in this table still runs, and most of the boards in it have no entry of their own either: Ohman asks the firmware what it is and uses what it answers. The table is a reading aid, not the list of what the code knows.</p>
+      <p class="note">Your board id is in Ohman under Settings, or from <code>(Get-CimInstance Win32_BaseBoard).Product</code> in PowerShell. A board that is not in this table still runs, and most of the boards in it have no entry of their own either: Ohman asks the firmware what it is and uses what it answers. The table is a reading aid, not the list of what the code knows.</p>
 
       <h3 id="verify">Verify yours</h3>
       <p>Five minutes, and it is the most useful thing you can contribute. Check that each mode changes the fans, that the

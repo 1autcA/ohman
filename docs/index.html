@@ -72,7 +72,6 @@ img{display:block}
 .bar nav{display:flex;align-items:center;gap:6px}
 .bar .out{padding:6px 10px;color:var(--muted);font-size:14px;text-decoration:none;border-radius:8px}
 .bar .out:hover{color:var(--text);background:var(--surface)}
-.bar .out svg{display:none}
 .bar .dl{
   display:inline-flex;align-items:center;gap:7px;
   padding:6px 12px;border-radius:8px;line-height:1.62;
@@ -99,6 +98,31 @@ img{display:block}
 }
 .bar .gh svg{width:13px;height:13px;flex:none}
 .bar .dl svg{width:13px;height:13px;flex:none}
+
+/* The header is three glyphs in one strip at every width. The 1 px gap over the container's own border colour
+   draws the dividers, so there are no per-segment borders to collapse; Download keeps the accent and GitHub keeps
+   its own surface, so it still reads as three actions rather than one ambiguous control. Each of the three carries
+   its own padding at a specificity the child selector cannot reach, which is why they are always set together. */
+.bar nav{gap:1px;background:var(--border);border-radius:9px;overflow:hidden}
+.bar nav > a{border:0;border-radius:0;gap:0}
+.bar .out,.bar .gh,.bar .dl{padding:6px 12px}
+.bar .out{display:inline-flex;align-items:center;background:var(--surface);color:var(--text)}
+.bar .out svg{display:block}
+.bar .gh{background:var(--gh-bg)}
+.bar .out svg,.bar .gh svg,.bar .dl svg{width:14px;height:14px}
+.bar .lbl,.bar .gh .n{display:none}
+
+/* On a PC there is room for both to be a step larger. The strip is padded to the mark's own height rather than
+   to whatever the glyph needs: centring alone left a 42 px brand beside a 32 px pill, which reads as two things
+   at different scales instead of one navbar. Equal heights are what make it one row. */
+@media (min-width:561px){
+  .brand{font-size:17px;gap:10px}
+  .mark{width:42px;height:42px}
+  .mark span{font-size:31px;line-height:42px}
+  .bar nav{border-radius:11px}
+  .bar .out,.bar .gh,.bar .dl{padding:13px 18px}
+  .bar .out svg,.bar .gh svg,.bar .dl svg{width:16px;height:16px}
+}
 
 /* ---------- 2. hero ---------- */
 .hero{padding-top:72px}
@@ -232,23 +256,13 @@ footer p{margin:0 0 8px}
 }
 @media (max-width:560px){
   .dl{grid-template-columns:1fr}
-  .dl dt{padding:14px 0 0;border-top:1px solid var(--border)}
-  .dl dt:first-of-type{border-top:0;padding-top:0}
-  .dl dd{padding:2px 0 0;border-top:0}
-  /* Three labelled buttons do not fit beside the brand at 375 px. Drop to icons and fuse them into one
-     strip: the 1 px gap over the container's border colour draws the dividers, so no per-segment borders
-     to collapse. Download keeps the accent, GitHub keeps its own surface, so the strip still reads as
-     three distinct actions rather than one ambiguous control. */
-  .bar nav{gap:1px;background:var(--border);border-radius:9px;overflow:hidden}
-  .bar nav > a{border:0;border-radius:0;gap:0}
-  /* Each of the three carries its own padding at a specificity this has to match, so they are set
-     together rather than through the child selector above - otherwise the segments come out uneven. */
-  .bar .out,.bar .gh,.bar .dl{padding:6px 12px}
-  .bar .out{display:inline-flex;align-items:center;background:var(--surface);color:var(--text)}
-  .bar .out svg{display:block}
-  .bar .gh{background:var(--gh-bg)}
-  .bar .out svg,.bar .gh svg,.bar .dl svg{width:14px;height:14px}
-  .bar .lbl,.bar .gh .n{display:none}
+  /* One rule per item, under the heading, binding it to its own text.
+     Both selectors are spelled out because the base rule is .dl dd:not(:first-of-type), which out-specifies a
+     plain .dl dd - so the old reset here never applied and dt and dd were each drawing a line. That was the
+     pair of rules stacked either side of every heading on a phone. */
+  .dl dt,.dl dt:not(:first-of-type){padding:22px 0 0;border-top:0}
+  .dl dt:first-of-type{padding-top:0}
+  .dl dd,.dl dd:not(:first-of-type){margin-top:7px;padding:9px 0 0;border-top:1px solid var(--border)}
   .brand{gap:6px}
 }
 @media (max-width:420px){

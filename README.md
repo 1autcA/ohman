@@ -95,8 +95,8 @@ new PlatformProfile {
 ```
 
 Everything else either has a default or is read from the firmware at run time. Override only what the evidence
-says is different, and put the evidence in `Notes`. The `add-laptop` skill turns a support issue into that
-entry and a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md).
+says is different, and put the evidence in `Notes`. A support issue becomes exactly that entry and a pull
+request; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Tools
 

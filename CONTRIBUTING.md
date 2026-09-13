@@ -4,9 +4,8 @@
 
 1. Open a **New laptop support** issue (the template asks for `tools\support-info.cmd` output and,
    ideally, OMEN Gaming Hub's background log with every mode clicked once).
-2. A maintainer, or you with Claude Code, runs the `add-laptop` skill in `.claude/skills/add-laptop/`:
-   it turns the issue's evidence into one `PlatformProfile` entry in `src/Platform.cs` and opens a PR
-   whose body lists the proving log line for every byte.
+2. The issue's evidence becomes one `PlatformProfile` entry in `src/Platform.cs`, in a PR whose body
+   lists the proving log line for every byte. Anyone can raise that PR; nothing in it is guesswork.
 3. The PR is merged only after the checklist in it has been run on the real machine by the issue author.
 
 Everything model-specific lives in `src/Platform.cs`: verified profiles, the board families generic mode uses,

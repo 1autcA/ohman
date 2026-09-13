@@ -25,3 +25,6 @@ app.ico
 
 # stray backups
 *.bak
+
+# local tooling, not part of the app
+.claude/

@@ -20,6 +20,7 @@ did what it says. Its settings are then fixed rather than worked out at run time
 |---|---|---|---|
 | OMEN Transcend 14 (2024) | `8C58`, `8E41` | 2026-09-12 | Checklist run on `8C58`: Core Ultra 9 185H + RTX 4070. Modes, fans, power gain, GPU power and four-zone lighting all confirmed against OMEN Gaming Hub 1101.2608. Graphics switching writes correctly but the restart it needs was never taken, so it is unconfirmed. `8E41` is the same model and firmware generation and is driven the same way, but nobody has run the checklist on one. |
 | OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
+| HyperX OMEN 15-gb0xxx (2026) | `8EEC` | 2026-09-13 | Ryzen 5 240 + RTX 5050, BIOS F.15. Max fan, manual, curve, auto, power gain, GPU power, graphics and four-zone lighting all confirmed by the owner. Reports **thermal policy v0**, so Eco and Balanced send the same byte and only Performance differs — see below. Base TDP 45 W, OMEN key 29/8613. |
 
 See [Verifying your laptop](#verifying-your-laptop).
 
@@ -75,6 +76,15 @@ name, so the badge on the lid does not decide this — only a readback from the 
 in July 2026 because one owner ran the fan table query on theirs and sent the readback to the kernel list.
 Board `8C2F` is reported to be shared between the 15" and 16" chassis, so even a board id is not always one
 machine.
+
+### A note on v0 boards
+
+The v0 byte set has one default (`0x00`), one performance (`0x01`) and one cool (`0x02`) — there is no
+separate low-power byte, so **Eco and Balanced are the same byte** and only Performance behaves differently.
+This is how the firmware is documented, not a bug, and `hp-wmi` maps low power to default on these boards for
+the same reason. Turning on **quieter Eco** in Settings makes Eco send `0x02` instead, which does differ.
+
+Board `8EEC` is a 2026 machine that still reports v0, so this is not only an old-laptop concern.
 
 ## Finding your board id
 

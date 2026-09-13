@@ -117,14 +117,35 @@ namespace Ohman {
 
     public static class Platforms {
         /// <summary>A profile for a board without a verified entry. Null when the firmware generation is unknown (stay read-only).</summary>
+        /// <summary>Thermal-policy version for boards whose firmware refuses the system-data query. Some older
+        /// firmware answers 0x1A perfectly well and returns rc 3 for 0x28, which leaves nothing to say whether the
+        /// mode bytes are the v0 set or the v1 set — the Linux driver gives up in the same place and returns
+        /// -EOPNOTSUPP. Anything in here came from a readback on the machine itself: an OMEN Gaming Hub log, or
+        /// `omenprobe call 1A 4 FF 30 00 00` against `... FF 00 ...`. Never from a guess about the model's age.</summary>
+        static readonly Dictionary<string, int> PolicyWhenFirmwareWontSay = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+            // { "8574", 0 },   // OMEN 15-dc1xxx: 0x28 returns rc 3. Waiting on a readback, see issue tracker.
+        };
+
+        /// <summary>The thermal-policy version, from the best source available: the kernel's own force-v0 list,
+        /// then the firmware's answer, then a readback somebody contributed. -1 when nothing can say.</summary>
+        static int PolicyVersion(string board, SystemInfo info) {
+            if (Families.In(Families.OmenForceV0, board)) return 0;      // the kernel decides these without asking either
+            if (info != null && info.Valid) return info.ThermalPolicy;
+            int v;
+            if (PolicyWhenFirmwareWontSay.TryGetValue(board ?? "", out v)) return v;
+            return -1;
+        }
+
         public static PlatformProfile Generic(string board, SystemInfo info) {
-            if (info == null || !info.Valid) return null;
-            var p = new PlatformProfile { Name = "Generic OMEN/Victus (board " + board + ")", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = info.ThermalPolicy };
+            bool haveInfo = info != null && info.Valid;
+            int policy = PolicyVersion(board, info);
+            if (policy < 0) return null;                                 // no source for the mode bytes: stay read-only
+            var p = new PlatformProfile { Name = "Generic OMEN/Victus (board " + board + ")", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = policy };
             p.Curve = FanCurve.Transcend14();
             if (Families.In(Families.Victus, board)) { p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03; p.Notes = "Victus family (hp-wmi victus_thermal_profile_boards)"; }
             else if (Families.In(Families.VictusS, board)) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x00; p.Notes = "Victus S family"; }
-            else if (Families.In(Families.OmenForceV0, board) || info.ThermalPolicy == 0) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x02; p.ThermalPolicy = 0; p.Notes = "thermal policy v0"; }
-            else if (info.ThermalPolicy == 1) {
+            else if (policy == 0) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x02; p.Notes = "thermal policy v0"; }
+            else if (policy == 1) {
                 // 0x50 (Cool) is documented only for the boards the kernel lists. Anywhere else, leave the
                 // quieter-Eco switch writing the ordinary Eco byte rather than one we cannot source.
                 bool listed = Families.In(Families.Omen, board);
@@ -132,7 +153,11 @@ namespace Ohman {
                 p.Notes = "thermal policy v1" + (listed ? ", listed in hp-wmi" : ", not in hp-wmi: no Cool profile");
             }
             else return null;
-            p.TdpBase = info.DefaultConcurrentTdp; p.HasPowerGain = info.DefaultConcurrentTdp > 0;
+            if (!haveInfo) p.Notes += ", from a contributed readback (0x28 unavailable)";
+            // Everything below is read from the machine. Without the system-data reply there is nothing to read,
+            // so the features it would have described are not offered rather than guessed at.
+            p.TdpBase = haveInfo ? info.DefaultConcurrentTdp : 0;
+            p.HasPowerGain = p.TdpBase > 0;
             p.HasGpuPower = false;                                        // the engine probes 0x21 and turns this on when the firmware answers
             return p;
         }
@@ -158,7 +183,7 @@ namespace Ohman {
         /// which marks it Verified and stops asking the next owner to be the first to try it. Verified only ever
         /// widens the thermal guard — it lets the chassis sensor arm a trigger before the sensor has read cool
         /// once, and makes release stricter — so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
-        static readonly string[] OwnerReported = { "8748" };
+        static readonly string[] OwnerReported = { "8748", "8EEC" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }
 
         public static string BoardOverride;         // --board: test aid

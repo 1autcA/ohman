@@ -300,9 +300,12 @@ namespace Ohman {
                 // the mailbox works if 0x28 answers, and every other capability is probed on its own below.
                 try { FanCount = Hw.GetFanCountPassive(); }   // never the 0x10 query here: it is the keep-alive trigger
                 catch (Exception ex) { FanCount = -1; Log.Write("no fan table (" + ex.Message + "): fan readout unavailable"); }
-                Info = Hw.GetSystemInfo();
+                // Some firmware refuses 0x28 outright (rc 3). That is an answer, not a dead mailbox, so it must not
+                // abort the rest of the check: a board can still have its mode bytes from a contributed readback.
+                try { Info = Hw.GetSystemInfo(); }
+                catch (Exception ex) { Info = new SystemInfo(); Log.Write("system data (0x28) unavailable: " + ex.Message); }
                 BiosOk = true;                                 // the mailbox answers; what it will answer is decided below
-                if (!Info.Valid) Log.Write("system data (0x28) returned nothing usable: " + Info.Hex.Length + " bytes");
+                if (!Info.Valid) Log.Write("no system data: power gain and graphics cannot be offered on this board");
                 if (Supported && !Hw.IsDemo && Info.Valid && Info.ThermalPolicy != P.ThermalPolicy) {
                     Supported = false; Log.Write("thermal policy v" + Info.ThermalPolicy + " does not match the profile (v" + P.ThermalPolicy + "); switching to read-only");
                 }

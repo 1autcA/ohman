@@ -75,6 +75,15 @@ in July 2026 because one owner ran the fan table query on theirs and sent the re
 Board `8C2F` is reported to be shared between the 15" and 16" chassis, so even a board id is not always one
 machine.
 
+## Reported working by an owner
+
+These are still driven by the generic path — no owner has sent the readbacks that would make them verified —
+but somebody has run Ohman on one and said it works, so the app stops asking the next owner to be the first.
+
+| Board | Reported |
+|---|---|
+| `8748` | OMEN 15/17 (2019–2021 generation), 2026-09-13 |
+
 ## Finding your board id
 
 Open Ohman and look at the top right of **Settings**, or run:

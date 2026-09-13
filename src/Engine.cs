@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — control engine: settings, apply logic, keep-alive heartbeat, OMEN key watcher, OGH suppression.
 using System;
 using System.Collections.Generic;
@@ -96,6 +96,7 @@ namespace Ohman {
         public int RefreshHz = 0;                   // chosen panel refresh rate (0 = leave Windows alone)
         public bool LowHzOnBattery = false;         // lowest refresh rate on battery, back to RefreshHz (or the highest) on AC
         public bool TrayTemp = true;                // CPU temperature drawn on the tray icon
+        public bool InfoDismissed = false;          // the first-on-this-board note, closed by the user
         public bool Guard = true;                   // thermal guard: force max fan when the machine runs away
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
         public string KeyCommand = "";              // KeyAction.Run: command line the OMEN key starts
@@ -292,8 +293,15 @@ namespace Ohman {
             if (prof != null) P = prof;
             Log.Write("platform: model='" + Model + "' board='" + Board + "' -> " + (prof != null ? prof.Name : "no verified profile"));
             try {
-                FanCount = Hw.GetFanCountPassive();     // never the 0x10 query here: it is the keep-alive trigger
+                // The fan table (0x2F) is not in every firmware's command set: a 2018 OMEN answers 0x28 happily and
+                // returns rc 3 for this one. It used to be the first call in this block, so a board that simply had
+                // fewer opcodes threw before BiosOk was ever set and the whole app went read-only, including the
+                // mode switching that board can do perfectly well. Nothing here is allowed to decide that any more:
+                // the mailbox works if 0x28 answers, and every other capability is probed on its own below.
+                try { FanCount = Hw.GetFanCountPassive(); }   // never the 0x10 query here: it is the keep-alive trigger
+                catch (Exception ex) { FanCount = -1; Log.Write("no fan table (" + ex.Message + "): fan readout unavailable"); }
                 Info = Hw.GetSystemInfo();
+                if (!Info.Valid) throw new Exception("system data query returned nothing usable");
                 BiosOk = true;
                 if (Supported && !Hw.IsDemo && Info.Valid && Info.ThermalPolicy != P.ThermalPolicy) {
                     Supported = false; Log.Write("thermal policy v" + Info.ThermalPolicy + " does not match the profile (v" + P.ThermalPolicy + "); switching to read-only");

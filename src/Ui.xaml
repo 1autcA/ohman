@@ -307,7 +307,13 @@
           <TextBlock x:Name="TxtErr" Style="{StaticResource Cap}" Foreground="#FF9A9A"/>
         </Border>
         <Border x:Name="InfoBanner" Visibility="Collapsed" Background="#1F3F8CFF" CornerRadius="8" Padding="10,8" Margin="0,20,0,0">
-          <TextBlock x:Name="TxtInfo" Style="{StaticResource Cap}" Foreground="#B9CDF7"/>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="TxtInfo" Style="{StaticResource Cap}" Foreground="#B9CDF7" Margin="0,0,10,0"/>
+            <Border x:Name="InfoClose" Grid.Column="1" Background="Transparent" Cursor="Hand" VerticalAlignment="Top" Padding="6,0,2,4" Margin="0,-3,-4,0">
+              <TextBlock Text="&#215;" FontFamily="{DynamicResource UiFont}" FontSize="15" Foreground="#7F9AC8"/>
+            </Border>
+          </Grid>
         </Border>
 
         <Grid Margin="0,24,0,0">

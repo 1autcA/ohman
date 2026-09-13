@@ -153,6 +153,12 @@ namespace Ohman {
             }
         };
 
+        /// <summary>Boards an owner has run and reported working. This deliberately does NOT set Verified: that
+        /// flag tells the thermal guard the chassis sensor's scale is known, and "it works for me" is not that
+        /// measurement. All it does is stop asking the next owner of the same board to be the first to try it.</summary>
+        static readonly string[] OwnerReported = { "8748" };
+        public static bool Reported(string board) { return Families.In(OwnerReported, board); }
+
         public static string BoardOverride;         // --board: test aid
         /// <summary>DMI baseboard product id, e.g. "8C58". Empty when unavailable.</summary>
         public static string ReadBoard() {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — WPF main window (layout in the embedded Ui.xaml): a rail on the left with Home, Fans, Keyboard and
 // Settings, one page visible at a time; the window morphs to each page's size. Also the tray icon, hotkeys and the
 // live readouts. Every size and colour here comes from the panel design.
@@ -53,7 +53,7 @@ namespace Ohman {
         ColorSource accentSrc; SolidColorBrush accent;
         // home
         TextBlock txtHomeTitle, txtHomeStatus, subCpu, subGpu, txtPower, txtFoot, txtFootRight, txtLightSub, txtErr, txtInfo; Run bigCpu, bigGpu, bigFan1, bigFan2;
-        FrameworkElement demoBadge, errBanner, infoBanner, powerRow, lightRow; Border miniHost; Ellipse dotHb;
+        FrameworkElement demoBadge, errBanner, infoBanner, powerRow, lightRow; Border miniHost, infoClose; Ellipse dotHb;
         Seg modeSeg; LinkSeg fanLinks; Slider slPower;
         // fans
         Seg fanSeg, stopAfterSeg; TextBlock txtFansStatus, txtCurveTitle, txtCurveHint, txtFan1, txtFan2, txtFanApplied, txtFanRight, btnFanAction, txtFloor, txtRamp, txtGuardNote;
@@ -171,6 +171,11 @@ namespace Ohman {
             pages[0] = F<FrameworkElement>("PageHome"); pages[1] = F<FrameworkElement>("PageFans"); pages[2] = F<FrameworkElement>("PageKbd"); pages[3] = F<FrameworkElement>("PageSettings");
             txtHomeTitle = F<TextBlock>("TxtHomeTitle"); txtHomeStatus = F<TextBlock>("TxtHomeStatus"); demoBadge = F<FrameworkElement>("DemoBadge");
             errBanner = F<FrameworkElement>("ErrBanner"); txtErr = F<TextBlock>("TxtErr"); infoBanner = F<FrameworkElement>("InfoBanner"); txtInfo = F<TextBlock>("TxtInfo");
+            infoClose = F<Border>("InfoClose");
+            infoClose.MouseLeftButtonUp += delegate {
+                E.S.InfoDismissed = true; try { E.S.Save(); } catch { }
+                infoBanner.Visibility = Visibility.Collapsed; Remeasure(cur);   // the page just got shorter
+            };
             bigCpu = F<Run>("BigCpu"); bigGpu = F<Run>("BigGpu"); subCpu = F<TextBlock>("SubCpu"); subGpu = F<TextBlock>("SubGpu"); bigFan1 = F<Run>("BigFan1"); bigFan2 = F<Run>("BigFan2");
             powerRow = F<FrameworkElement>("PowerRow"); slPower = F<Slider>("SlPower"); txtPower = F<TextBlock>("TxtPower");
             lightRow = F<FrameworkElement>("LightRow"); txtLightSub = F<TextBlock>("TxtLightSub"); miniHost = F<Border>("MiniHost");
@@ -1213,8 +1218,9 @@ namespace Ohman {
                 errBanner.Visibility = err ? Visibility.Visible : Visibility.Collapsed;
                 if (err) txtErr.Text = !E.BiosOk ? "BIOS interface unavailable: " + E.LastError
                     : "Unsupported laptop (board " + E.Board + "). Read-only: nothing is written to the firmware. Run tools\\support-info.cmd and open a GitHub issue to add it.";
-                infoBanner.Visibility = E.Generic && !E.Hw.IsDemo ? Visibility.Visible : Visibility.Collapsed;
-                if (E.Generic) txtInfo.Text = "Board " + E.Board + " is supported but nobody has verified it yet. If everything works, say so in a GitHub issue and it will be marked verified.";
+                bool firstHere = E.Generic && !E.Hw.IsDemo && !S.InfoDismissed && !Platforms.Reported(E.Board);
+                infoBanner.Visibility = firstHere ? Visibility.Visible : Visibility.Collapsed;
+                if (firstHere) txtInfo.Text = "You're the first to try this on your laptop. If it works, tell us on Discord or Reddit and we'll mark it verified.";
                 RefreshTray();
                 string tip = Program.DisplayName + " · " + E.ModeName + " · " + E.CurrentTdp + " W" + (S.Fan == FanMode.Max ? " · max fan" : "");
                 tray.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
@@ -1230,7 +1236,8 @@ namespace Ohman {
             double age = (DateTime.Now - E.LastHeartbeat).TotalSeconds;
             bool fresh = E.LastHeartbeat != DateTime.MinValue && age < E.S.HeartbeatSec * 2.5;
             dotHb.Fill = Ui.Brush(fresh ? Ui.Ok : Ui.Warn);
-            txtFoot.Text = ShortModel() + " · " + E.FanCount + " fans";
+            // A firmware without the fan table reports no count; saying "-1 fans" is worse than saying nothing.
+            txtFoot.Text = ShortModel() + (E.FanCount > 0 ? " · " + E.FanCount + " fans" : "");
             txtFoot.ToolTip = "Ohman is driving this laptop's firmware" + (fresh ? ", last refreshed " + E.LastHeartbeat.ToString("HH:mm:ss") : "; the refresh is overdue");
         }
 

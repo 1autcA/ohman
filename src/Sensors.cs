@@ -2,6 +2,7 @@
 // Ohman — extra sensors that do not need the BIOS: ACPI thermal zone + CPU utilisation (perf counters)
 // and NVIDIA GPU stats via nvidia-smi. All reads are best-effort and never throw.
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -17,7 +18,8 @@ namespace Ohman {
     }
 
     public sealed class Sensors : IDisposable {
-        PerformanceCounter thermal, cpuUtil, cpuFreq, cpuPerf, cpuPower;
+        PerformanceCounter[] thermals = new PerformanceCounter[0];
+        PerformanceCounter cpuUtil, cpuFreq, cpuPerf, cpuPower;
         string nvsmi; int nvFail;
         // Asking nvidia-smi anything wakes the discrete GPU. On a hybrid laptop, asking every few seconds stops it
         // ever reaching its deepest idle state, which costs several watts and shows up as a warmer chassis and busier
@@ -39,26 +41,31 @@ namespace Ohman {
         /// <summary>Counter setup takes seconds the first time; it runs on the worker so the window is not held back.</summary>
         void InitCounters() {
             try {
-                // Machines expose several ACPI thermal zones and the order means nothing: the first one
-                // alphabetically is as likely to be a skin sensor, or a constant, as the processor. Take the
-                // hottest zone that reads like a real temperature, because the CPU is the hottest thing in a
-                // laptop at idle and a wrong choice here blinds the fan curve and the thermal guard together.
+                // Machines expose several ACPI thermal zones and the order means nothing: one is as likely to
+                // be a skin sensor, or a constant, as the processor. Keep every zone that reads like a real
+                // temperature and take the hottest on each poll, because the CPU is the hottest thing in a
+                // laptop under load, and a wrong choice here blinds the fan curve and the thermal guard together.
+                //
+                // Choosing one zone here and keeping it was the bug behind "CPU stuck at 28 degrees", reported by
+                // two owners on unrelated boards. A zone that reports a fixed value can be the hottest one on a
+                // cold machine, and it was then held for the life of the process, so the reading never moved
+                // again. One sample cannot tell a constant from an idle CPU. The next poll can, so the choice
+                // belongs there and not here.
                 var cat = new PerformanceCounterCategory("Thermal Zone Information");
                 string[] inst = cat.GetInstanceNames();
                 Array.Sort(inst);
-                double best = 0; string bestName = null;
+                var live = new List<PerformanceCounter>();
                 foreach (string name in inst) {
                     PerformanceCounter c = null;
                     try {
                         c = new PerformanceCounter("Thermal Zone Information", "Temperature", name, true);
                         double k = c.NextValue();
                         if (k < 283 || k > 398) { c.Dispose(); continue; }     // 10 C to 125 C; anything else is not a temperature
-                        if (k <= best) { c.Dispose(); continue; }
-                        if (thermal != null) thermal.Dispose();
-                        thermal = c; best = k; bestName = name;
+                        live.Add(c);
                     } catch { if (c != null) try { c.Dispose(); } catch { } }
                 }
-                if (bestName != null) Log.Write("thermal zone counter: " + bestName + " (" + Math.Round(best - 273.15, 1) + " C, hottest of " + inst.Length + ")");
+                thermals = live.ToArray();
+                if (thermals.Length > 0) Log.Write("thermal zones: " + thermals.Length + " usable of " + inst.Length + ", hottest wins each poll");
                 else Log.Write("no usable thermal zone among " + inst.Length + "; CPU temperature unavailable");
             } catch (Exception ex) { Log.Write("no thermal zone counter: " + ex.Message); }
             try { cpuUtil = new PerformanceCounter("Processor Information", "% Processor Utility", "_Total", true); cpuUtil.NextValue(); } catch (Exception ex) { Log.Write("no cpu util counter: " + ex.Message); }
@@ -100,7 +107,11 @@ namespace Ohman {
             while (!stop) {
                 wake.Reset();
                 var s = new SensorSnapshot();
-                try { if (thermal != null) { double k = thermal.NextValue(); if (k > 200) s.CpuTemp = Math.Round(k - 273.15, 1); } } catch { }
+                double hot = double.NaN;
+                for (int i = 0; i < thermals.Length; i++) {
+                    try { double k = thermals[i].NextValue(); if (k > 200 && (double.IsNaN(hot) || k > hot)) hot = k; } catch { }
+                }
+                if (!double.IsNaN(hot)) s.CpuTemp = Math.Round(hot - 273.15, 1);
                 try { if (cpuUtil != null) s.CpuLoad = Math.Min(100, cpuUtil.NextValue()); } catch { }
                 try {
                     if (cpuFreq != null) {
@@ -178,7 +189,7 @@ namespace Ohman {
 
         public void Dispose() {
             stop = true; wake.Set();
-            try { if (thermal != null) thermal.Dispose(); if (cpuUtil != null) cpuUtil.Dispose(); if (cpuFreq != null) cpuFreq.Dispose(); if (cpuPower != null) cpuPower.Dispose(); } catch { }
+            try { for (int i = 0; i < thermals.Length; i++) { try { thermals[i].Dispose(); } catch { } } if (cpuUtil != null) cpuUtil.Dispose(); if (cpuFreq != null) cpuFreq.Dispose(); if (cpuPower != null) cpuPower.Dispose(); } catch { }
         }
     }
 }

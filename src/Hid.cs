@@ -240,7 +240,10 @@ namespace Ohman {
                     int id = U16(rep, 1); if (id < 0 || id >= LampCount) id = i;
                     X[id] = I32(rep, 3); Y[id] = I32(rep, 7);
                     programmable[id] = featureLen > 27 && rep[27] != 0;      // IsProgrammable
-                    KeyUsage[id] = U16(rep, 28);                      // InputBinding: the HID usage of the key under the lamp
+                    // InputBinding is ONE byte (HUTRR84 3.5.3), and it is the last field of the report.
+                    // Reading it as a u16 took the byte after it too, which is off the end of a report that
+                    // stops at 28: it only ever gave the right answer because the buffer is zero filled.
+                    KeyUsage[id] = featureLen > 28 ? rep[28] : (ushort)0;   // the HID usage of the key under the lamp
                 } catch { }
             }
         }

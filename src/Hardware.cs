@@ -156,17 +156,26 @@ namespace Ohman {
         /// 0 none, 1 CPU, 2 GPU, 3 exhaust, 4 pump, 5 intake), which is the reliable source -- byte 0 of the fan
         /// table says 1 on a two-fan Victus 16-d1xxx. Falls back to the fan table when 0x2C will not answer.</summary>
         public int GetFanCountPassive() {
+            int n = 0;
             try {
                 var t = Call(OP_FAN_TYPE, Z4, 128);
                 if (t.Length > 0) {
-                    int n = 0;
                     // Two nibbles in a byte, and only 1..5 are fan types. Firmware answering 0xFF instead of
                     // refusing would otherwise read as two fans and skip the fan table that knows better.
                     for (int i = 0; i < 2; i++) { int nib = (t[0] >> (i * 4)) & 0xF; if (nib >= 1 && nib <= 5) n++; }
-                    if (n > 0) return n;
                 }
             } catch { }
-            var d = Call(OP_FAN_TABLE_GET, Z4, 128); return d.Length > 0 ? d[0] : -1;
+            if (n == 0) { try { var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length > 0) n = d[0]; } catch { } }
+            // A Victus 16-d1xxx (board 8A26) declares one fan in 0x2C and one in the fan table, then reports two
+            // live speeds. It has two fans, so the declaration is the part that is wrong. Believe the speeds, but
+            // only ever upwards: 0x2D reads 0 for a fan that is stopped, so a pair of zeroes proves nothing.
+            if (n == 1) {
+                try {
+                    var lv = Call(OP_FAN_LEVEL_GET, Z4, 128);
+                    if (lv.Length > 1 && lv[0] > 0 && lv[1] > 0) n = 2;
+                } catch { }
+            }
+            return n > 0 ? n : -1;
         }
         public int GetFanTableMax() {
             var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length < 2) return -1;

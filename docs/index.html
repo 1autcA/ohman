@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <!-- Source of truth for the site. Published to ohmanapp/ohmanapp.github.io, which is what GitHub Pages
      serves; this repository does not serve Pages itself. Editing here and forgetting to publish is the
      one way to get them out of step. -->
@@ -235,6 +235,10 @@ footer p{margin:0 0 8px}
   .dl dt:first-of-type{border-top:0;padding-top:0}
   .dl dd{padding:2px 0 0;border-top:0}
   .bar .out{display:none}
+  /* A phone has room for the brand and one action. Download is the action; the star count still sits on the
+     hero button right below, so nothing is lost by dropping GitHub from the bar. */
+  .bar .gh{display:none}
+  .brand{gap:6px}
 }
 @media (max-width:420px){
   .wrap{padding:0 18px}

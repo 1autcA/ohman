@@ -56,6 +56,22 @@ namespace Ohman {
             return v.Trim();
         }
 
+        static string OghLogDir() {
+            string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\Packages";
+            if (!System.IO.Directory.Exists(root)) return null;
+            foreach (string d in System.IO.Directory.GetDirectories(root, "AD2F1837.OMENCommandCenter*")) {
+                string c = d + "\\LocalCache\\Local\\HPOMEN";
+                if (System.IO.Directory.Exists(c)) return c;
+            }
+            return null;
+        }
+        static List<System.IO.FileInfo> OghLogs(string dir) {
+            var files = new List<System.IO.FileInfo>();
+            foreach (string f in System.IO.Directory.GetFiles(dir, "HPOMEN*.log")) files.Add(new System.IO.FileInfo(f));
+            files.Sort(delegate(System.IO.FileInfo a, System.IO.FileInfo b) { return b.LastWriteTime.CompareTo(a.LastWriteTime); });
+            return files;
+        }
+
         static string Hex(byte[] d, int max) {
             if (d == null) return "(null)";
             var sb = new StringBuilder();
@@ -142,12 +158,12 @@ namespace Ohman {
 
             // ---- the firmware, asked directly
             sb.AppendLine("BIOS queries (read-only; NO means the firmware refused, which is itself useful)");
-            byte[] sys = null;
+            byte[] sys = null, fanTable = null;
             if (!e.Hw.IsDemo) {
                 var z4 = new byte[4];
                 sys = Probe(sb, "0x28 system data", Bios.CMD_DEFAULT, 0x28, z4, 128);
                 Probe(sb, "0x2D fan levels", Bios.CMD_DEFAULT, 0x2D, z4, 128);
-                Probe(sb, "0x2F fan table", Bios.CMD_DEFAULT, 0x2F, z4, 128);
+                fanTable = Probe(sb, "0x2F fan table", Bios.CMD_DEFAULT, 0x2F, z4, 128);
                 Probe(sb, "0x2C fan types", Bios.CMD_DEFAULT, 0x2C, z4, 128);
                 Probe(sb, "0x23 chassis temp", Bios.CMD_DEFAULT, 0x23, new byte[] { 1, 0, 0, 0 }, 4);
                 Probe(sb, "0x21 gpu power", Bios.CMD_DEFAULT, 0x21, z4, 4);
@@ -174,6 +190,11 @@ namespace Ohman {
                 if ((sys[7] & 4) != 0) gm.Add("Discrete");
                 if ((sys[7] & 8) != 0) gm.Add("Advanced Optimus");
                 sb.AppendLine("  graphics modes:   0x" + sys[7].ToString("X2") + "  " + (gm.Count > 0 ? string.Join(", ", gm.ToArray()) : "none offered"));
+                if (fanTable != null && fanTable.Length >= 2) {
+                    int rows = Math.Min((int)fanTable[1], 40), top = 0;
+                    for (int i = 0; i < rows; i++) { int o = 2 + 3 * i; if (o + 1 < fanTable.Length) top = Math.Max(top, Math.Max(fanTable[o], fanTable[o + 1])); }
+                    sb.AppendLine("  fan table:        " + fanTable[0] + " fans, " + fanTable[1] + " curve rows, top level " + top + " (about " + (top * 100) + " rpm)");
+                }
             } else if (!e.Hw.IsDemo) {
                 sb.AppendLine("  system data was refused. The thermal-policy version is what decides the mode bytes, so");
                 sb.AppendLine("  without it this board cannot be driven from the firmware alone and needs a contributed");
@@ -236,6 +257,93 @@ namespace Ohman {
                     if (found.Count == 0) sb.AppendLine("  (no capability lines in the most recent logs)");
                     foreach (string k in keys) if (found.ContainsKey(k)) sb.AppendLine("  " + found[k]);
                 }
+            } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
+            sb.AppendLine();
+
+            // ---- OGH's cached copy of system data. This is the one that matters when the firmware refuses
+            //      0x28: HP's own app stores the same bytes, and byte 3 is the thermal-policy version, which is
+            //      the single thing standing between an undrivable board and a working one.
+            sb.AppendLine("OMEN Gaming Hub's cached system data (works even when 0x28 is refused)");
+            try {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\HP\OMEN Ally\Settings")) {
+                    if (k == null) sb.AppendLine("  (no OGH settings key)");
+                    else {
+                        var raw = k.GetValue("SystemDesignData") as byte[];
+                        if (raw == null) sb.AppendLine("  (key present, no SystemDesignData)");
+                        else {
+                            sb.AppendLine("  SystemDesignData = " + Hex(raw, 12));
+                            if (raw.Length > 8) sb.AppendLine("  -> thermal policy v" + raw[3] + ", PL4 " + raw[5] + " W, base concurrent " + raw[8] + " W");
+                        }
+                        foreach (string n in new[] { "LoadedJsonSku", "LastLoadedJsonSku" }) {
+                            object v = k.GetValue(n);
+                            if (v != null) sb.AppendLine("  " + n + " = " + Scrub("" + v));
+                        }
+                    }
+                }
+            } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
+            sb.AppendLine();
+
+            // ---- the payloads OGH itself sends, which is ground truth for any byte we are unsure of
+            sb.AppendLine("Payloads OMEN Gaming Hub sent (its own writes; ground truth for a byte we guessed)");
+            try {
+                string dir2 = OghLogDir();
+                if (dir2 == null) sb.AppendLine("  (OMEN Gaming Hub has never run here)");
+                else {
+                    var counts = new Dictionary<string, int>();
+                    var files2 = OghLogs(dir2);
+                    int n2 = 0;
+                    foreach (var f in files2) {
+                        if (++n2 > 4) break;
+                        try {
+                            foreach (string line in System.IO.File.ReadLines(f.FullName)) {
+                                int at = line.IndexOf("inputData=", StringComparison.Ordinal);
+                                if (at < 0) continue;
+                                string v = line.Substring(at + 10).Trim().TrimEnd(',');
+                                if (v.Length == 0 || v.Length > 40 || v.IndexOf(',') < 0 || v == "0,0,0,0" || v == "is null") continue;   // single values are not payloads
+                                if (counts.ContainsKey(v)) counts[v]++; else counts[v] = 1;
+                            }
+                        } catch { }
+                    }
+                    if (counts.Count == 0) sb.AppendLine("  (none in the most recent logs)");
+                    var keys2 = new List<string>(counts.Keys);
+                    keys2.Sort(delegate(string a, string b) { return counts[b].CompareTo(counts[a]); });
+                    int shown = 0;
+                    foreach (string key in keys2) { if (++shown > 12) break; sb.AppendLine("  " + key.PadRight(24) + " x" + counts[key]); }
+                }
+            } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
+            sb.AppendLine();
+
+            // ---- the GPU's own limits, for any report about wattage
+            sb.AppendLine("NVIDIA power limits");
+            try {
+                var psi = new ProcessStartInfo("nvidia-smi", "--query-gpu=name,power.limit,power.default_limit,power.min_limit,power.max_limit --format=csv,noheader") {
+                    UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true
+                };
+                using (var pr = Process.Start(psi)) {
+                    string o = pr.StandardOutput.ReadToEnd();
+                    pr.WaitForExit(8000);
+                    if (o.Trim().Length == 0) sb.AppendLine("  (no output; AMD or iGPU only)");
+                    foreach (string line in o.Split('\n')) if (line.Trim().Length > 0) sb.AppendLine("  " + Scrub(line.Trim()));
+                }
+            } catch { sb.AppendLine("  (nvidia-smi not present; AMD or iGPU only)"); }
+            sb.AppendLine();
+
+            // ---- and what Ohman itself logged getting here
+            sb.AppendLine("Ohman log (the decisions, not the whole file)");
+            try {
+                var keep = new List<string>();
+                foreach (string line in System.IO.File.ReadLines(Log.Path)) {
+                    if (line.IndexOf("platform:", StringComparison.Ordinal) >= 0 || line.IndexOf("generic profile", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("BIOS ok", StringComparison.Ordinal) >= 0 || line.IndexOf("self-test", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("read-only", StringComparison.Ordinal) >= 0 || line.IndexOf("no fan table", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("system data", StringComparison.Ordinal) >= 0 || line.IndexOf("thermal zone", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("keyboard lighting", StringComparison.Ordinal) >= 0 || line.IndexOf("THERMAL GUARD", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("FAIL ", StringComparison.Ordinal) >= 0)
+                        keep.Add(line);
+                }
+                int from = Math.Max(0, keep.Count - 25);
+                for (int i = from; i < keep.Count; i++) sb.AppendLine("  " + Scrub(keep[i]));
+                if (keep.Count == 0) sb.AppendLine("  (nothing notable yet)");
             } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
             sb.AppendLine();
 

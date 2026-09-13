@@ -68,7 +68,7 @@ namespace Ohman {
         KeyboardView kbdMini, kbdBig; DispatcherTimer colorDebounce, levelDebounce, speedDebounce, floorDebounce; bool miniNeedsFrame;
         string gran = "Zone"; Rgb curColor; bool hexTyping;
         // settings
-        Seg keySeg, gfxSeg, hzSeg, gpuSeg; TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
+        Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg; TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
         FrameworkElement keyCmdRow, gfxRow, hzRow, lowHzRow, gpuRow; TextBox txtKeyCmd; Ellipse keyDot;
         ToggleButton tgSuppress, tgHotkeys, tgAutostart, tgEcoBattery, tgSyncPower, tgLowHzBattery, tgTrayTemp, tgGuard, tgUpdateAuto;
         TextBlock txtGuardSub, txtMaxCoolSub, txtKeyCmdHint;
@@ -358,6 +358,16 @@ namespace Ohman {
                         "A raised power limit as well as the borrowing",
                         "Base in Eco, Boost in Balanced, Max in Performance" }, null, Seg.Kind.Row);
             F<Border>("GpuSegHost").Child = gpuSeg;
+            // Somebody watching clocks under load wants them to move; somebody on battery does not want the cost.
+            // Only affects the open window: hidden, the rate is still decided by what is actually waiting on it.
+            var pollMs = new[] { 500, 1000, 2000 };
+            pollSeg = new Seg(new[] { "0.5s", "1s", "2s" },
+                new[] { "Updates twice a second", "Updates every second", "The default" }, null, Seg.Kind.Row);
+            F<Border>("PollSegHost").Child = pollSeg;
+            pollSeg.Picked += delegate(int i) {
+                if (i < 0 || i >= pollMs.Length) return;
+                E.S.PollMs = pollMs[i]; E.S.Save(); PollRate();
+            };
             gpuSeg.Picked += delegate(int i) {
                 if (i == 3) Bg(delegate { E.SetGpu(E.S.Gpu, true, false); });
                 else { GpuLevel g = (GpuLevel)i; Bg(delegate { E.SetGpu(g, false, false); }); }
@@ -1236,6 +1246,7 @@ namespace Ohman {
                     + (ShowChassis(lastBiosTemp) ? " · chassis " + lastBiosTemp + "°" : "");
                 fanLinks.SetText(2, S.Fan == FanMode.Custom ? "Curve" : "Manual");
                 fanLinks.Select(S.Fan == FanMode.Auto ? 0 : S.Fan == FanMode.Max ? 1 : 2, IsVisible);
+                if (pollSeg != null) pollSeg.Select(S.PollMs <= 500 ? 0 : S.PollMs <= 1000 ? 1 : 2, IsVisible && cur == Page.Settings);
                 if (gpuSeg != null) { gpuSeg.Select(S.GpuAuto ? 3 : (int)g, IsVisible && cur == Page.Settings); txtGpuSub.Text = S.GpuAuto ? "Follows the mode" : g == GpuLevel.Max ? "Custom TGP + PPAB" : g == GpuLevel.Boost ? "PPAB" : "Base TGP"; }
                 RefreshLighting();
                 if (cur == Page.Fans) RefreshFans(true);
@@ -1367,7 +1378,7 @@ namespace Ohman {
             // the GPU is unknown, and the thermal guard never used the GPU. On AC, or with the window open, or on
             // a machine where the GPU is the only thing there is, it polls as before.
             sensors.SkipGpu = E.GpuMode == 3 || (onBattery && !IsVisible);
-            int ms = IsVisible ? 2000
+            int ms = IsVisible ? E.S.PollMs
                    : curveDrivesFans ? 5000
                    : E.S.TrayTemp ? (onBattery ? 10000 : 5000)
                    : (onBattery ? 30000 : 15000);

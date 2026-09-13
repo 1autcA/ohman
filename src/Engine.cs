@@ -97,6 +97,7 @@ namespace Ohman {
         public int RefreshHz = 0;                   // chosen panel refresh rate (0 = leave Windows alone)
         public bool LowHzOnBattery = false;         // lowest refresh rate on battery, back to RefreshHz (or the highest) on AC
         public bool TrayTemp = true;                // CPU temperature drawn on the tray icon
+        public int PollMs = 2000;                   // sensor refresh while the window is open
         public bool InfoDismissed = false;          // the first-on-this-board note, closed by the user
         public bool Guard = true;                   // thermal guard: force max fan when the machine runs away
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
@@ -159,6 +160,7 @@ namespace Ohman {
                         case "ManualLinked": if (bool.TryParse(v, out b)) s.ManualLinked = b; break;
                         case "UpdateChecked": { long l; if (long.TryParse(v, out l)) s.UpdateChecked = l; break; }
                         case "CheckedFrom": s.CheckedFrom = v; break;
+                        case "PollMs": { int pm; if (int.TryParse(v, out pm) && pm >= 500 && pm <= 5000) s.PollMs = pm; break; }
                         case "LatestVersion": s.LatestVersion = v.Length > 24 ? v.Substring(0, 24) : v; break;
                         case "WinX": if (TryInt(v, out n)) s.WinX = n; break;
                         case "WinY": if (TryInt(v, out n)) s.WinY = n; break;
@@ -208,7 +210,7 @@ namespace Ohman {
                 sb.AppendLine("RefreshHz=" + RefreshHz); sb.AppendLine("LowHzOnBattery=" + LowHzOnBattery); sb.AppendLine("TrayTemp=" + TrayTemp); sb.AppendLine("KeyCommand=" + KeyCommand);
                 sb.AppendLine("Guard=" + Guard); sb.AppendLine("UpdateOnLaunch=" + UpdateOnLaunch);
                 sb.AppendLine("MaxBackWhenCool=" + MaxBackWhenCool); sb.AppendLine("MaxStopAfterMin=" + MaxStopAfterMin); sb.AppendLine("ManualLinked=" + ManualLinked);
-                sb.AppendLine("UpdateChecked=" + UpdateChecked); sb.AppendLine("LatestVersion=" + LatestVersion); sb.AppendLine("CheckedFrom=" + CheckedFrom);
+                sb.AppendLine("UpdateChecked=" + UpdateChecked); sb.AppendLine("LatestVersion=" + LatestVersion); sb.AppendLine("CheckedFrom=" + CheckedFrom); sb.AppendLine("PollMs=" + PollMs);
                 sb.AppendLine("WinX=" + WinX); sb.AppendLine("WinY=" + WinY); sb.AppendLine("StartHidden=" + StartHidden);
                 sb.AppendLine("# Name=   (optional: a different display name for the window and tray; no rebuild needed)");
                 if (!string.IsNullOrEmpty(Name)) sb.AppendLine("Name=" + Name);

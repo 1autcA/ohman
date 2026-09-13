@@ -429,17 +429,17 @@ footer p{margin:0 0 8px}
       <p class="note">Your board id is in Ohman under Settings, or from <code>(Get-CimInstance Win32_BaseBoard).Product</code> in PowerShell. A board that is not in this table still runs, and most of the boards in it have no entry of their own either: Ohman asks the firmware what it is and uses what it answers. The table is a reading aid, not the list of what the code knows.</p>
 
       <h3 id="verify">Verify yours</h3>
-      <p>Five minutes, and it is the most useful thing you can contribute. Check that each mode changes the fans, that the
-      fan modes do what they say, and that nothing is stuck after you exit. Then run <code>tools\support-info.cmd</code> and open a
-      <a href="https://github.com/P4R1H/Ohman/issues/new?template=verify-laptop.yml">Verify my laptop</a> issue with the file it writes.
-      Your model moves to verified and everyone with that board gets the tested profile.</p>
+      <p>Check that each mode moves the fans, that the fan modes do what they say, and that nothing is stuck after you
+      exit. Then <b>Settings &rarr; Report Issue</b>, and open a
+      <a href="https://github.com/P4R1H/Ohman/issues/new?template=verify-laptop.yml">Verify my laptop</a> issue with what it copies.</p>
+
+      <p>Five minutes, and everyone on your board gets the tested profile.</p>
 
       <h3>If something is wrong on your model</h3>
       <ol>
-        <li>Run the support-info tool and press the OMEN key when it asks.
-          <pre><code>tools\support-info.cmd</code></pre>
-          It writes <code>tools\support-info.txt</code>: model, board id, BIOS, system-design data, fan table, key event. No personal data.</li>
-        <li>Open a <a href="https://github.com/P4R1H/Ohman/issues/new?template=new-laptop-support.yml">New laptop support</a> issue with that file, what OGH shows on your model, and ideally OGH's own log (<code class="path">%LOCALAPPDATA%\Packages\AD2F1837.OMENCommandCenter_v10z8vjag6ke6\LocalCache\Local\HPOMEN\</code>) from a session where you clicked every mode.</li>
+        <li><b>Settings &rarr; Report Issue.</b> Collects your model, board id, BIOS, system-design data and fan table, copies it, and opens a prefilled issue. No personal data.
+          <br>If Ohman will not start, <code>tools\support-info.cmd</code> writes the same thing to a file.</li>
+        <li>Paste it in, and say what OGH does differently on your model. OGH's own log helps most, from a session where you clicked every mode: <code class="path">%LOCALAPPDATA%\Packages\AD2F1837.OMENCommandCenter_v10z8vjag6ke6\LocalCache\Local\HPOMEN\</code></li>
         <li>A laptop is one entry in <a href="https://github.com/P4R1H/Ohman/blob/main/src/Platform.cs">src/Platform.cs</a>. Nothing else in the app is model-specific.</li>
       </ol>
     </section>

@@ -1084,7 +1084,7 @@ namespace Ohman {
             txtFanRight.Visibility = link ? Visibility.Collapsed : Visibility.Visible;
             btnFanAction.Text = S.Fan == FanMode.Auto ? "Edit as curve" : "Reset curve";
             if (S.Fan == FanMode.Max) {
-                txtFanApplied.Text = "Loud" + (lastBiosTemp >= 0 ? " · chassis " + lastBiosTemp + "°" : "");
+                txtFanApplied.Text = "Loud" + (lastBiosTemp > 0 ? " · chassis " + lastBiosTemp + "°" : "");
                 txtFanRight.Text = "Ctrl+Alt+M toggles";
             } else {
                 txtFanApplied.Text = E.GuardActive ? "Thermal guard: max fan until cool" : "Applied to " + E.ModeName;
@@ -1223,7 +1223,8 @@ namespace Ohman {
                 slPower.Value = S.TdpOffset; txtPower.Text = "+" + S.TdpOffset + " W";
                 GpuLevel g = E.EffectiveGpu;
                 string gpuName = g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base";
-                txtHomeStatus.Text = (E.P.HasGpuPower ? gpuName : E.CurrentTdp + " W") + (lastBiosTemp >= 0 ? " · chassis " + lastBiosTemp + "°" : "");
+                // 0 is not a chassis temperature, it is a firmware that does not implement 0x23. Saying "chassis 0" reads as a reading.
+                txtHomeStatus.Text = (E.P.HasGpuPower ? gpuName : E.CurrentTdp + " W") + (lastBiosTemp > 0 ? " · chassis " + lastBiosTemp + "°" : "");
                 fanLinks.SetText(2, S.Fan == FanMode.Custom ? "Curve" : "Manual");
                 fanLinks.Select(S.Fan == FanMode.Auto ? 0 : S.Fan == FanMode.Max ? 1 : 2, IsVisible);
                 if (gpuSeg != null) { gpuSeg.Select(S.GpuAuto ? 3 : (int)g, IsVisible && cur == Page.Settings); txtGpuSub.Text = S.GpuAuto ? "Follows the mode" : g == GpuLevel.Max ? "Custom TGP + PPAB" : g == GpuLevel.Boost ? "PPAB" : "Base TGP"; }
@@ -1300,7 +1301,7 @@ namespace Ohman {
                     }
                     if (t >= 0 && t != lastBiosTemp) {
                         lastBiosTemp = t; GpuLevel g = E.EffectiveGpu;
-                        txtHomeStatus.Text = (E.P.HasGpuPower ? (g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base") : E.CurrentTdp + " W") + " · chassis " + t + "°";
+                        txtHomeStatus.Text = (E.P.HasGpuPower ? (g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base") : E.CurrentTdp + " W") + (t > 0 ? " · chassis " + t + "°" : "");
                     }
                     reading = false;
                 });

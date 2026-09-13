@@ -108,7 +108,9 @@ namespace Ohman {
                         double pct = double.NaN;
                         try { if (cpuPerf != null) pct = cpuPerf.NextValue(); } catch { }
                         // A boosting chip reads over 100 %; a parked one reads well under. Ignore obvious nonsense.
-                        s.CpuMhz = (!double.IsNaN(pct) && pct > 1 && pct < 500) ? base_ * pct / 100.0 : base_;
+                        // Without the percentage there is no way to know the real clock, and the base one dressed
+                        // up as the current one is exactly the thing that got reported, so show nothing instead.
+                        s.CpuMhz = (!double.IsNaN(pct) && pct > 1 && pct < 500) ? base_ * pct / 100.0 : double.NaN;
                     }
                 } catch { }
                 try { if (cpuPower != null) s.CpuWatts = Watts(cpuPower.NextValue() / 1000.0); } catch { }

@@ -194,6 +194,13 @@ namespace Ohman {
         }
 
         static readonly object saveSync = new object();
+        /// <summary>Remove the settings file. Only the reset uses this: it has just undone everything the file
+        /// described, and leaving it would put all of it back the moment anything ran again.</summary>
+        public void Delete() {
+            NoPersist = true;
+            try { if (System.IO.File.Exists(File_)) System.IO.File.Delete(File_); } catch { }
+        }
+
         public void Save() {
             if (NoPersist) return;
             try {
@@ -444,6 +451,53 @@ namespace Ohman {
         /// starting a game would therefore leave the fans idle while the chips climb. Fallback is the level
         /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
         /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
+        /// <summary>Put the machine back the way it was, then let the caller quit. Everything Ohman changes
+        /// outside its own folder is undone here, vendor software first so the laptop has its own tools back.
+        ///
+        /// This exists because an owner panicked. He could not get his keyboard back, uninstalling did not help,
+        /// and he had no route to the software he already knew. Anything that writes to firmware and switches off
+        /// the vendor's own tools owes people a way out that does not depend on the author shipping a fix in time.
+        ///
+        /// The graphics mode is deliberately not reverted: changing it needs a restart and it is an explicit
+        /// choice somebody made, so the dialog names it rather than silently undoing it.</summary>
+        public string FactoryReset() {
+            var done = new List<string>();
+            try { SetOghTasks(false); done.Add("re-enabled OMEN Gaming Hub's tasks"); }
+            catch (Exception ex) { Log.Write("reset ogh tasks: " + ex.Message); }
+            try {
+                if (!Hw.IsDemo && S.TookWinLighting && WinLighting.Present) {
+                    WinLighting.SetControl(true); S.TookWinLighting = false;
+                    done.Add("gave the keyboard back to Windows Dynamic Lighting");
+                }
+            } catch (Exception ex) { Log.Write("reset lighting: " + ex.Message); }
+            try {
+                int top = Display.HighestHz();
+                if (top > 0 && (S.RefreshHz > 0 || S.LowHzOnBattery) && Display.CurrentHz() != top) {
+                    Display.SetHz(top); done.Add("put the refresh rate back to " + top + " Hz");
+                }
+            } catch (Exception ex) { Log.Write("reset refresh: " + ex.Message); }
+            if (BiosOk && !Hw.IsDemo && !ReadOnly) {
+                try {
+                    lock (applySync) {
+                        Try(delegate { Hw.SetMode(P.ModeBalanced, OnBattery); }, "Reset mode");
+                        MaxFan(false, "Reset max fan");
+                        WriteLevels(P.Curve.Fallback, P.Curve.Fallback, "Reset fan level");
+                    }
+                    done.Add("set the mode back to balanced and handed the fans back");
+                } catch (Exception ex) { Log.Write("reset firmware: " + ex.Message); }
+            }
+            try {
+                if (Light != null && !Hw.IsDemo) {
+                    TryLight(delegate { Light.SetBacklight(true, 100); }, "Reset backlight");
+                    done.Add("turned the keyboard backlight back on");
+                }
+            } catch (Exception ex) { Log.Write("reset backlight: " + ex.Message); }
+            var sb = new StringBuilder();
+            foreach (string d in done) sb.AppendLine("  - " + d);
+            Log.Write("factory reset: " + string.Join("; ", done.ToArray()));
+            return sb.ToString();
+        }
+
         public void Park() {
             // Give the keyboard back before anything else. To paint it at all we switch Windows Dynamic Lighting
             // off, and we were never switching it back: quitting left the keyboard frozen on the last thing we

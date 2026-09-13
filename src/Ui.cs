@@ -52,7 +52,7 @@ namespace Ohman {
         readonly NavBtn[] nav = new NavBtn[4]; Border railPill; TranslateTransform railPillT; Canvas railCanvas; FrameworkElement rail, logoHost; StackPanel navBottom;
         ColorSource accentSrc; SolidColorBrush accent;
         // home
-        TextBlock txtHomeTitle, txtHomeStatus, subCpu, subGpu, txtPower, txtFoot, txtFootRight, txtLightSub, txtErr, txtInfo, btnSupport; Run bigCpu, bigGpu, bigFan1, bigFan2;
+        TextBlock txtHomeTitle, txtHomeStatus, subCpu, subGpu, txtPower, txtFoot, txtFootRight, txtLightSub, txtErr, txtInfo, btnSupport, btnReset; Run bigCpu, bigGpu, bigFan1, bigFan2;
         FrameworkElement demoBadge, errBanner, infoBanner, powerRow, lightRow; Border miniHost, infoClose; Ellipse dotHb;
         Seg modeSeg; LinkSeg fanLinks; Slider slPower;
         // fans
@@ -203,7 +203,7 @@ namespace Ohman {
             tgGuard = F<ToggleButton>("TgGuard"); tgUpdateAuto = F<ToggleButton>("TgUpdateAuto");
             txtGuardSub = F<TextBlock>("TxtGuardSub"); txtMaxCoolSub = F<TextBlock>("TxtMaxCoolSub"); txtKeyCmdHint = F<TextBlock>("TxtKeyCmdHint");
             txtUpdate = F<TextBlock>("TxtUpdate"); btnUpdate = F<TextBlock>("BtnUpdate");
-            btnDiag = F<TextBlock>("BtnDiag"); btnSupport = F<TextBlock>("BtnSupport"); btnLog = F<TextBlock>("BtnLog"); btnExit = F<TextBlock>("BtnExit"); txtDiag = F<TextBlock>("TxtDiag"); btnClose = F<Button>("BtnClose");
+            btnDiag = F<TextBlock>("BtnDiag"); btnSupport = F<TextBlock>("BtnSupport"); btnReset = F<TextBlock>("BtnReset"); btnLog = F<TextBlock>("BtnLog"); btnExit = F<TextBlock>("BtnExit"); txtDiag = F<TextBlock>("TxtDiag"); btnClose = F<Button>("BtnClose");
             toast = F<Border>("Toast"); txtToast = F<TextBlock>("TxtToast");
             btnExit.Text = "Exit " + Program.DisplayName;
             foreach (string n in new[] { "SecKey", "SecPower", "SecDisplay", "SecApp" }) Track(n);
@@ -440,6 +440,37 @@ namespace Ohman {
             };
             btnLog.MouseLeftButtonUp += delegate { try { Process.Start(new ProcessStartInfo(Log.Path) { UseShellExecute = true }); } catch (Exception ex) { ShowToast("Cannot open log: " + ex.Message, true); } };
             btnExit.MouseLeftButtonUp += delegate { ExitApp(); };
+            // Somebody has to be able to leave. A tool that writes to firmware and switches off the vendor's own
+            // software owes the owner a way back that does not depend on waiting for the author to ship a fix.
+            btnReset.MouseLeftButtonUp += delegate {
+                string ask = "Undo everything " + Program.DisplayName + " changed, then quit?\n\n"
+                    + "It re-enables OMEN Gaming Hub's tasks, gives the keyboard back to Windows, puts the refresh rate back, "
+                    + "sets the mode to balanced, hands the fans back to the firmware, turns the backlight on, and deletes its "
+                    + "own settings and log.\n\n"
+                    + "The graphics mode is left as you set it, because changing that needs a restart.\n\n"
+                    + "Afterwards you can delete " + Program.AppName + ".exe and nothing of it is left behind.";
+                if (MessageBox.Show(IsVisible ? (Window)this : null, ask, Program.DisplayName,
+                        MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                btnReset.Text = "resetting...";
+                Slow(delegate {
+                    string what = "";
+                    try { what = E.FactoryReset(); } catch (Exception ex) { Log.Write("factory reset: " + ex.Message); }
+                    Dispatcher.BeginInvoke((Action)delegate {
+                        try { SetAutostart(false); } catch (Exception ex) { Log.Write("reset autostart: " + ex.Message); }
+                        resetting = true;                    // ExitApp must delete the settings, not save them
+                        string folder = "";
+                        try { folder = System.IO.Path.GetDirectoryName(Log.Path); } catch { }
+                        MessageBox.Show(IsVisible ? (Window)this : null,
+                            (what.Length > 0 ? "Done:\n\n" + what + "\n" : "Done.\n\n")
+                                + Program.DisplayName + " closes now. Delete " + Program.AppName + ".exe when it does.",
+                            Program.DisplayName, MessageBoxButton.OK, MessageBoxImage.Information);
+                        if (folder.Length > 0)
+                            try { Process.Start(new ProcessStartInfo("explorer.exe", folder) { UseShellExecute = true }); } catch { }
+                        ExitApp();
+                    });
+                });
+            };
+
             // the wheel moves a fixed, small distance and eases there; the default jumps three "lines" of a very tall panel
             scroll.PreviewMouseWheel += delegate(object o, MouseWheelEventArgs e) {
                 e.Handled = true;
@@ -1496,9 +1527,10 @@ namespace Ohman {
             }) { IsBackground = true, Name = "show-listener" };
             t.Start();
         }
+        bool resetting;
         void ExitApp() {
             if (exiting) return; exiting = true;
-            try { E.S.Save(); } catch { }
+            if (resetting) { try { E.S.Delete(); } catch { } } else { try { E.S.Save(); } catch { } }
             try { UnregisterHotkeys(); } catch { }
             try { uiTimer.Stop(); } catch { }
             try { Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerMode; } catch { }

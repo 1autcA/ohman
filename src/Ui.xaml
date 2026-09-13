@@ -762,6 +762,16 @@
                 <ToggleButton x:Name="TgUpdateAuto" Grid.Column="2" Style="{StaticResource Switch}" ToolTip="Check once a day when Ohman starts"/>
               </Grid>
             </Border>
+            <Border BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+                  <TextBlock Text="Reset and remove" Style="{StaticResource Row}"/>
+                  <TextBlock Text="Undoes everything Ohman changed on this laptop, then quits" Style="{StaticResource RowSub}"/>
+                </StackPanel>
+                <TextBlock x:Name="BtnReset" Grid.Column="1" Style="{StaticResource Link}" FontSize="13" Text="Reset" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
             <TextBlock x:Name="TxtDiag" Style="{StaticResource Mono}" FontSize="10.5" Margin="0,14,0,0" Visibility="Collapsed" TextWrapping="Wrap"/>
           </StackPanel>
         </ScrollViewer>

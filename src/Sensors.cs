@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — extra sensors that do not need the BIOS: ACPI thermal zone + CPU utilisation (perf counters)
 // and NVIDIA GPU stats via nvidia-smi. All reads are best-effort and never throw.
 using System;
@@ -17,7 +17,7 @@ namespace Ohman {
     }
 
     public sealed class Sensors : IDisposable {
-        PerformanceCounter thermal, cpuUtil, cpuFreq, cpuPower;
+        PerformanceCounter thermal, cpuUtil, cpuFreq, cpuPerf, cpuPower;
         string nvsmi; int nvFail;
         // Asking nvidia-smi anything wakes the discrete GPU. On a hybrid laptop, asking every few seconds stops it
         // ever reaching its deepest idle state, which costs several watts and shows up as a warmer chassis and busier
@@ -62,7 +62,11 @@ namespace Ohman {
                 else Log.Write("no usable thermal zone among " + inst.Length + "; CPU temperature unavailable");
             } catch (Exception ex) { Log.Write("no thermal zone counter: " + ex.Message); }
             try { cpuUtil = new PerformanceCounter("Processor Information", "% Processor Utility", "_Total", true); cpuUtil.NextValue(); } catch (Exception ex) { Log.Write("no cpu util counter: " + ex.Message); }
-            try { cpuFreq = new PerformanceCounter("Processor Information", "Processor Frequency", "_Total", true); } catch { }
+            // "Processor Frequency" is the *base* clock on most machines and never moves, which is what a Ryzen
+            // AI 7 350 owner saw: the number sat at base while the chip boosted. "% Processor Performance" is the
+            // one that tracks the real clock, as a percentage of base, so the two together give the actual MHz.
+            try { cpuFreq = new PerformanceCounter("Processor Information", "Processor Frequency", "_Total", true); cpuFreq.NextValue(); } catch { }
+            try { cpuPerf = new PerformanceCounter("Processor Information", "% Processor Performance", "_Total", true); cpuPerf.NextValue(); } catch (Exception ex) { Log.Write("no cpu performance counter: " + ex.Message); }
             // CPU package power: the Energy Meter counters (Intel RAPL through Windows' energy metering interface, no driver needed)
             try {
                 var cat = new PerformanceCounterCategory("Energy Meter");
@@ -98,7 +102,15 @@ namespace Ohman {
                 var s = new SensorSnapshot();
                 try { if (thermal != null) { double k = thermal.NextValue(); if (k > 200) s.CpuTemp = Math.Round(k - 273.15, 1); } } catch { }
                 try { if (cpuUtil != null) s.CpuLoad = Math.Min(100, cpuUtil.NextValue()); } catch { }
-                try { if (cpuFreq != null) s.CpuMhz = cpuFreq.NextValue(); } catch { }
+                try {
+                    if (cpuFreq != null) {
+                        double base_ = cpuFreq.NextValue();
+                        double pct = double.NaN;
+                        try { if (cpuPerf != null) pct = cpuPerf.NextValue(); } catch { }
+                        // A boosting chip reads over 100 %; a parked one reads well under. Ignore obvious nonsense.
+                        s.CpuMhz = (!double.IsNaN(pct) && pct > 1 && pct < 500) ? base_ * pct / 100.0 : base_;
+                    }
+                } catch { }
                 try { if (cpuPower != null) s.CpuWatts = Watts(cpuPower.NextValue() / 1000.0); } catch { }
                 try {
                     var ps = System.Windows.Forms.SystemInformation.PowerStatus;

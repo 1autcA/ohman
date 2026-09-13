@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — hardware layer.
 // HP OMEN BIOS control through the WMI class root\wmi:hpqBIntM (requires elevation).
 // Every opcode below was verified against three independent sources on 2026-09-08:
@@ -91,6 +91,7 @@ namespace Ohman {
         public const uint OP_FAN_LEVEL_GET = 0x2D; // out128 -> [0]=fan1 [1]=fan2 (x100 RPM)
         public const uint OP_FAN_LEVEL_SET = 0x2E; // in {fan1, fan2, 0...}
         public const uint OP_FAN_TABLE_GET = 0x2F; // out128 -> [0]=fan count, [1]=entries, then {fan1, fan2, temp} triplets
+        public const uint OP_FAN_TYPE = 0x2C;      // out128 -> [0] one nibble per fan; see GetFanCountPassive
 
         // Thermal-policy v1 mode bytes (this machine reports policy v1 in system data byte 3).
         // OGH's own SetFanMode maps: Default->0x30, Performance->0x31, Cool->0x50, Eco->0x30 (Eco is software-side: Windows power mode + GPU/TDP).
@@ -151,7 +152,20 @@ namespace Ohman {
         static readonly byte[] Z4 = new byte[] { 0, 0, 0, 0 };
 
         public int GetFanCount() { var d = Call(OP_FAN_COUNT, Z4, 4); return d.Length > 0 ? d[0] : -1; }
-        public int GetFanCountPassive() { var d = Call(OP_FAN_TABLE_GET, Z4, 128); return d.Length > 0 ? d[0] : -1; }
+        /// <summary>How many fans this machine has. 0x2C answers with one nibble per fan (OmenMon's FanType:
+        /// 0 none, 1 CPU, 2 GPU, 3 exhaust, 4 pump, 5 intake), which is the reliable source -- byte 0 of the fan
+        /// table says 1 on a two-fan Victus 16-d1xxx. Falls back to the fan table when 0x2C will not answer.</summary>
+        public int GetFanCountPassive() {
+            try {
+                var t = Call(OP_FAN_TYPE, Z4, 128);
+                if (t.Length > 0) {
+                    int n = 0;
+                    for (int i = 0; i < 4; i++) { int nib = (t[0] >> (i * 4)) & 0xF; if (i < 2 && nib != 0) n++; }
+                    if (n > 0) return n;
+                }
+            } catch { }
+            var d = Call(OP_FAN_TABLE_GET, Z4, 128); return d.Length > 0 ? d[0] : -1;
+        }
         public int GetFanTableMax() {
             var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length < 2) return -1;
             int n = Math.Min((int)d[1], 40), top = -1;

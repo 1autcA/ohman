@@ -250,11 +250,12 @@ namespace Ohman {
                             foreach (string line in System.IO.File.ReadLines(f.FullName))
                                 foreach (string k in keys)
                                     if (!found.ContainsKey(k) && line.IndexOf(k, StringComparison.Ordinal) >= 0) {
-                                        found[k] = Scrub(Strip(line));
+                                        found[k] = Scrub(Strip(line)).PadRight(64) + "  (" + f.LastWriteTime.ToString("yyyy-MM-dd") + ")";
                                     }
                         } catch { }
                     }
                     if (found.Count == 0) sb.AppendLine("  (no capability lines in the most recent logs)");
+                    else sb.AppendLine("  (the date is the log each line came from - OGH may not have run recently)");
                     foreach (string k in keys) if (found.ContainsKey(k)) sb.AppendLine("  " + found[k]);
                 }
             } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
@@ -305,6 +306,12 @@ namespace Ohman {
                         } catch { }
                     }
                     if (counts.Count == 0) sb.AppendLine("  (none in the most recent logs)");
+                    else if (files2.Count > 0) {
+                        var newest = files2[0].LastWriteTime;
+                        int days = (int)(DateTime.Now - newest).TotalDays;
+                        sb.AppendLine("  from logs last written " + newest.ToString("yyyy-MM-dd")
+                            + (days >= 14 ? "  -- " + days + " days ago, so these are stale" : ""));
+                    }
                     var keys2 = new List<string>(counts.Keys);
                     keys2.Sort(delegate(string a, string b) { return counts[b].CompareTo(counts[a]); });
                     int shown = 0;

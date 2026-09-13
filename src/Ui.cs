@@ -145,7 +145,6 @@ namespace Ohman {
             else if (E.LastError.Length > 0) ShowToast(E.LastError, true);      // a write already failed during Init, before this handler existed
             QueryAutostartAsync();
             if (!E.Hw.IsDemo && E.S.UpdateOnLaunch) Slow(delegate { E.CheckForUpdate(false); });
-            sensors.SkipGpu = E.GpuMode == 3;                          // iGPU only: there is nothing to wake
             StartShowListener();
             // Build the window handle now rather than on first Show. Started from the logon task this window
             // may never be shown at all, and without a handle there is nowhere to register a hotkey or to hook
@@ -625,7 +624,7 @@ namespace Ohman {
         }
 
         void Wire() {
-            foreach (string n in new[] { "HeadHome", "HeadFans", "HeadKbd", "HeadSettings" })
+            foreach (string n in new[] { "HeadHome", "HeadFans", "HeadKbd", "HeadSettings", "DragStrip" })
                 F<FrameworkElement>(n).MouseLeftButtonDown += delegate(object o, MouseButtonEventArgs me) { if (me.LeftButton == MouseButtonState.Pressed) Drag(); };
             btnClose.Click += delegate { HideToTray(); };
             powerDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
@@ -1319,6 +1318,12 @@ namespace Ohman {
             // the last reading it was given, so polling slower than that would make the fans answer a poll interval
             // late — not a saving worth having. With nothing but the tray number waiting on them, they can wait.
             bool curveDrivesFans = !E.ReadOnly && (E.S.Fan == FanMode.Auto || E.S.Fan == FanMode.Custom);
+            // Reading the discrete GPU means running nvidia-smi, and on a hybrid laptop that wakes a GPU which was
+            // asleep in D3. Doing it on battery with the window shut costs real runtime for a number nobody is
+            // looking at, so we stop entirely: the curve reads max(CPU, GPU) and falls back to the CPU alone when
+            // the GPU is unknown, and the thermal guard never used the GPU. On AC, or with the window open, or on
+            // a machine where the GPU is the only thing there is, it polls as before.
+            sensors.SkipGpu = E.GpuMode == 3 || (onBattery && !IsVisible);
             int ms = IsVisible ? 2000
                    : curveDrivesFans ? 5000
                    : E.S.TrayTemp ? (onBattery ? 10000 : 5000)

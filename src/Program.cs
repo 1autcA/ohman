@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — entry point.
 //   Ohman.exe                 normal start (elevated build asks for UAC once)
 //   Ohman.exe --hidden        start minimised to the tray (used by the autostart task)
@@ -98,9 +98,20 @@ namespace Ohman {
         /// <summary>--lamps. Everything the keyboard's own HID lighting interface will tell us, and nothing written.
         /// On a four-zone laptop this finds HP's virtual device with its four lamps; on a per-key one it should find
         /// the keyboard itself with a lamp per key, which is what Ohman would drive.</summary>
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AttachConsole(int processId);
+
         static int ListLamps() {
+            // This is a windows-subsystem binary, so it has no console of its own: run it from a prompt and every
+            // Console.WriteLine below went nowhere, which is exactly what it looked like to the first person who
+            // tried it. Borrow the console of whatever launched us and point stdout back at it. Redirection (which
+            // is how support-info.cmd calls this) already worked and still does; AttachConsole simply fails there.
+            try {
+                if (AttachConsole(-1)) {
+                    var w = new System.IO.StreamWriter(Console.OpenStandardOutput()); w.AutoFlush = true; Console.SetOut(w);
+                }
+            } catch { }
             // Also goes to the log: this is launched from support-info.cmd and from shortcuts as often as from a
-            // prompt, and a windows-subsystem process started without a console has nowhere to print.
+            // prompt, and the log is what people end up attaching to an issue anyway.
             Action<string> say = delegate(string s) { Console.WriteLine(s); Log.Write("lamps| " + s); };
             var all = Hid.Enumerate();
             int lighting = 0;

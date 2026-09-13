@@ -439,6 +439,15 @@ namespace Ohman {
         }
 
         // ---------- apply ----------
+        /// <summary>Lighting lives behind a different command id (0x20009) from everything else (0x20008), and the
+        /// two are not supported together. Board 8574 answers every lighting call and returns rc 3 for every
+        /// performance one, so gating the backlight on whether we understand the board's fan and mode bytes hid a
+        /// keyboard that works. Nothing here writes a performance byte, so ReadOnly has no say over it.</summary>
+        bool TryLight(Action a, string what) {
+            try { a(); return true; }
+            catch (Exception ex) { Log.Write("FAIL " + what + ": " + ex.Message); Fire(Toast, what + " failed: " + ex.Message, true); return false; }
+        }
+
         bool Try(Action a, string what) {
             if (ReadOnly) { Log.Write("read-only (unsupported board '" + Board + "'): skipped " + what); return false; }
             try { a(); LastError = ""; return true; }
@@ -843,7 +852,7 @@ namespace Ohman {
         // ---------- keyboard lighting ----------
         void InitLight() {
             try {
-                Light = Hw.IsDemo ? (ILighting)new DemoLighting() : (BiosOk && !ReadOnly ? BiosLighting.Detect() : null);
+                Light = Hw.IsDemo ? (ILighting)new DemoLighting() : (BiosOk ? BiosLighting.Detect() : null);   // not !ReadOnly: see TryLight
                 // A per-key board answers the firmware calls and lights nothing by them. Its colours live on the
                 // keyboard's own HID lighting interface, so look for that before giving up on it.
                 if (!Hw.IsDemo && Light != null && Light.Inert) {
@@ -874,7 +883,7 @@ namespace Ohman {
             StopEffect();
             if (S.Light == 2) { if (WinLighting.Present) WinLighting.SetControl(true); return; }      // Windows paints; we stay out of it
             if (WinLighting.Present && WinLighting.HasControl) WinLighting.SetControl(false);        // take the keyboard first or Windows overwrites us
-            Try(delegate {
+            TryLight(delegate {
                 if (S.Light == 1) Light.SetColors(Scaled(LightColors));
                 Light.SetBacklight(S.Light == 1, 100);                                              // the level byte OGH writes; brightness is in the colours
             }, "Keyboard lighting");
@@ -898,7 +907,7 @@ namespace Ohman {
         public void SetLightSpeed(int speed) { S.LightSpeed = Math.Max(1, Math.Min(5, speed)); S.Save(); Changed(); }
         public void SetLightLevel(int level) {
             S.LightLevel = Math.Max(0, Math.Min(100, level)); S.Save();
-            lock (applySync) { if (S.Light == 1 && Light != null && S.LightEffect == 0) Try(delegate { Light.SetColors(Scaled(LightColors)); }, "Keyboard brightness"); }
+            lock (applySync) { if (S.Light == 1 && Light != null && S.LightEffect == 0) TryLight(delegate { Light.SetColors(Scaled(LightColors)); }, "Keyboard brightness"); }
             Changed();
         }
 

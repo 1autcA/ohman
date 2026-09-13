@@ -89,29 +89,44 @@ namespace Ohman {
 
         /// <summary>Asks the firmware what keyboard this is. Read-only. Null when there is nothing to control.</summary>
         public static BiosLighting Detect() {
-            int type = -1;
+            // There are two independent questions here and we used to ask only one of them.
+            //
+            // 0x20009/0x01 bit 0 is whether this keyboard has a controllable backlight at all. OmenMon's
+            // HasBacklight() and OpenRGB's isLightingSupported() both read exactly that bit, and both ignore the
+            // BIOS return code while doing it. 0x2B is the keyboard *layout* -- OmenMon names the values
+            // Standard / WithNumPad / TenKeyLess / PerKeyRgb -- and both projects fall back to 0 ("standard") when
+            // the call fails. We were treating 0x2B as the capability and bailing out on type 0, so every board
+            // reporting a standard layout lost its keyboard page before we ever asked whether it had a backlight.
+            bool declared = false;
+            try { var d = Bios.Call(CMD, OP_PLATFORM_INFO, new byte[0], 128); if (d.Length > 0) declared = (d[0] & 1) != 0; }
+            catch (Exception ex) { Log.Write("lighting support probe: " + ex.Message); }
+
+            int type = 0;                                  // what both reference implementations assume on failure
             try { var d = Bios.Call(Bios.CMD_DEFAULT, OP_KBD_TYPE, new byte[0], 4); if (d.Length > 0) type = (sbyte)d[0]; }
-            catch (Exception ex) { Log.Write("keyboard type query: " + ex.Message); }
-            // The byte is signed and None is -1. Read unsigned that is 255, which matches no branch below and
-            // falls through to the platform-info probe, whose bit 0 is a saturating counter on some boards.
-            if (type == 0 || type < 0) { Log.Write("keyboard lighting: none (type " + type + ")"); return null; }
-            LightKind k = LightKind.None; int z = 0;
-            if (type == 1 || type == 2) { k = LightKind.Zones; z = 4; }
-            else if (type == 4 || type == 5) { k = LightKind.Zones; z = 1; }
+            catch (Exception ex) { Log.Write("keyboard type query: " + ex.Message + "; assuming standard layout"); }
+            if (type < 0) type = 0;                        // -1 arrives as 0xFF and means the same thing as 0 here
+
+            LightKind k; int z;
             // Type 3 keeps the four-zone table and the backlight byte, and neither does anything: reported by three
             // separate owners (OMEN 17-ck, board 88FE, Transcend 16) and confirmed by OmenMon's maintainer. The real
             // interface is the keyboard's own USB HID device. See docs/research.md, "Per-key keyboards".
-            else if (type == 3) { k = LightKind.PerKey; z = 4; }
-            else {
-                // older models (OGH: Pirates/Marlins/Gamora/Milos/Santorini) answer a platform-info query instead
-                try { var d = Bios.Call(CMD, OP_PLATFORM_INFO, new byte[0], 128); if (d.Length > 0 && (d[0] & 1) != 0) { k = LightKind.Zones; z = 4; } }
-                catch (Exception ex) { Log.Write("lighting platform info: " + ex.Message); }
-            }
-            if (k == LightKind.None) { Log.Write("keyboard lighting: none (type " + type + ")"); return null; }
-            if (k == LightKind.PerKey) Log.Write("keyboard lighting: type 3 (per-key). The firmware interface answers but drives nothing on these boards; colours are left to Windows Dynamic Lighting.");
+            if (type == 3) { k = LightKind.PerKey; z = 4; }
+            else if (type == 4 || type == 5) { k = LightKind.Zones; z = 1; }
+            else { k = LightKind.Zones; z = 4; }           // 0 standard, 1 numpad, 2 tenkeyless: all four-zone boards
+
             var l = new BiosLighting(type, k, z);
-            try { var c = l.GetColors(); int b = l.GetBacklight(); Log.Write("keyboard lighting: type " + type + " -> " + l.Describe + ", colours " + Join(c) + ", backlight 0x" + b.ToString("X2")); }
-            catch (Exception ex) { Log.Write("keyboard lighting: type " + type + " but the colour table failed (" + ex.Message + "); disabled"); return null; }
+            // The colour table is the final word in both directions, which is what keeps a board with no lighting
+            // from being handed an editor: it has to actually answer. A board that answers while declaring nothing
+            // plainly has lighting -- board 8574 returns rc 3 for every 0x20008 command and still answers 0x20009.
+            try {
+                var c = l.GetColors(); int b = l.GetBacklight();
+                Log.Write("keyboard lighting: type " + type + " -> " + l.Describe + ", firmware "
+                    + (declared ? "declares support" : "declares no support") + ", colours " + Join(c) + ", backlight 0x" + b.ToString("X2"));
+            } catch (Exception ex) {
+                Log.Write("keyboard lighting: none (type " + type + ", support bit " + (declared ? "1" : "0") + ", colour table: " + ex.Message + ")");
+                return null;
+            }
+            if (k == LightKind.PerKey) Log.Write("keyboard lighting: type 3 (per-key). The firmware interface answers but drives nothing on these boards; colours are left to Windows Dynamic Lighting.");
             return l;
         }
 

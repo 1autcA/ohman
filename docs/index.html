@@ -7,7 +7,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Ohman — OMEN Gaming Hub alternative for HP OMEN and Victus laptops</title>
+<title>Ohman - OMEN Gaming Hub alternative for HP OMEN and Victus laptops</title>
 <meta name="description" content="Ohman replaces OMEN Gaming Hub on Windows: modes, fan curves, power gain, GPU power, graphics switching and keyboard lighting. One executable, no services, no drivers, no account, no ads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Cdefs%3E%3ClinearGradient id='g' gradientUnits='userSpaceOnUse' x1='4' y1='4' x2='24' y2='24'%3E%3Cstop offset='0' stop-color='%238FBCFF'/%3E%3Cstop offset='1' stop-color='%232454A6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='7.4' y='7.4' width='13.2' height='13.2' rx='2.2' fill='url(%23g)' transform='rotate(45 14 14)'/%3E%3C/svg%3E">
 <meta property="og:title" content="Ohman">
@@ -72,6 +72,7 @@ img{display:block}
 .bar nav{display:flex;align-items:center;gap:6px}
 .bar .out{padding:6px 10px;color:var(--muted);font-size:14px;text-decoration:none;border-radius:8px}
 .bar .out:hover{color:var(--text);background:var(--surface)}
+.bar .out svg{display:none}
 .bar .dl{
   display:inline-flex;align-items:center;gap:7px;
   padding:6px 12px;border-radius:8px;line-height:1.62;
@@ -234,10 +235,20 @@ footer p{margin:0 0 8px}
   .dl dt{padding:14px 0 0;border-top:1px solid var(--border)}
   .dl dt:first-of-type{border-top:0;padding-top:0}
   .dl dd{padding:2px 0 0;border-top:0}
-  .bar .out{display:none}
-  /* A phone has room for the brand and one action. Download is the action; the star count still sits on the
-     hero button right below, so nothing is lost by dropping GitHub from the bar. */
-  .bar .gh{display:none}
+  /* Three labelled buttons do not fit beside the brand at 375 px. Drop to icons and fuse them into one
+     strip: the 1 px gap over the container's border colour draws the dividers, so no per-segment borders
+     to collapse. Download keeps the accent, GitHub keeps its own surface, so the strip still reads as
+     three distinct actions rather than one ambiguous control. */
+  .bar nav{gap:1px;background:var(--border);border-radius:9px;overflow:hidden}
+  .bar nav > a{border:0;border-radius:0;gap:0}
+  /* Each of the three carries its own padding at a specificity this has to match, so they are set
+     together rather than through the child selector above - otherwise the segments come out uneven. */
+  .bar .out,.bar .gh,.bar .dl{padding:6px 12px}
+  .bar .out{display:inline-flex;align-items:center;background:var(--surface);color:var(--text)}
+  .bar .out svg{display:block}
+  .bar .gh{background:var(--gh-bg)}
+  .bar .out svg,.bar .gh svg,.bar .dl svg{width:14px;height:14px}
+  .bar .lbl,.bar .gh .n{display:none}
   .brand{gap:6px}
 }
 @media (max-width:420px){
@@ -258,14 +269,17 @@ footer p{margin:0 0 8px}
   <header class="bar">
     <span class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" width="38" height="38"><defs><linearGradient id="mk" gradientUnits="userSpaceOnUse" x1="4" y1="4" x2="24" y2="24"><stop offset="0" stop-color="#8FBCFF"/><stop offset="1" stop-color="#2454A6"/></linearGradient></defs><rect x="7.4" y="7.4" width="13.2" height="13.2" rx="2.2" fill="url(#mk)" transform="rotate(45 14 14)"/></svg><span>😮</span></span>Ohman</span>
     <nav>
-      <a class="out" href="#laptops">Laptops</a>
+      <a class="out" href="#laptops" aria-label="Supported laptops">
+        <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="3.4" width="9.6" height="6.6" rx="1.2"/><path d="M1.6 12.6h12.8"/></svg>
+        <span class="lbl">Laptops</span>
+      </a>
       <a class="gh" href="https://github.com/P4R1H/Ohman" aria-label="Ohman on GitHub">
         <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
-        GitHub <span class="n" id="starsNav" hidden></span>
+        <span class="lbl">GitHub</span> <span class="n" id="starsNav" hidden></span>
       </a>
-      <a class="dl" href="https://github.com/P4R1H/Ohman/releases/latest">
+      <a class="dl" href="https://github.com/P4R1H/Ohman/releases/latest" aria-label="Download Ohman">
         <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1v8.2M4.6 6.2L8 9.6l3.4-3.4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11.5v2A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
-        Download
+        <span class="lbl">Download</span>
       </a>
     </nav>
   </header>

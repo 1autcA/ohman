@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — raw HID, and the HID Lighting And Illumination ("LampArray") interface on top of it.
 //
 // Why this file exists: HP's BIOS mailbox cannot light a per-key keyboard. On those machines the firmware still
@@ -307,7 +307,13 @@ namespace Ohman {
         public PerKeyLighting(LampArray la) {
             lamps = la;
             ids = new int[la.LampCount]; shown = new Rgb[la.LampCount];
-            for (int i = 0; i < la.LampCount; i++) { ids[i] = i; shown[i] = new Rgb(0xFF, 0xFF, 0xFF); }
+            // Off, not white. A LampArray cannot be read back, so whatever we put here is invented, and white is
+            // the loudest possible invention: it is every lamp at full brightness. It also does not stay local --
+            // ParseColors returns null when the saved string is shorter than the lamp count, which it always is
+            // coming from a four-zone string, so InitLight falls back to GetColors() and saves this array as the
+            // user's colours. An owner who wanted one key lit and the rest dark got a fully white keyboard, kept
+            // across restarts. Black asserts nothing, and it is what "I have not set this key" should look like.
+            for (int i = 0; i < la.LampCount; i++) { ids[i] = i; shown[i] = new Rgb(0, 0, 0); }
             lamps.TakeOver(true);
         }
 

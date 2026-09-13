@@ -108,11 +108,48 @@ namespace Ohman {
         /// On a four-zone laptop this finds HP's virtual device with its four lamps; on a per-key one it should find
         /// the keyboard itself with a lamp per key, which is what Ohman would drive.</summary>
         [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AttachConsole(int processId);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AllocConsole();
+
+        /// <summary>Give the console-shaped switches somewhere to print, and say whether we opened it ourselves.
+        ///
+        /// This is a windows-subsystem binary, so it owns no console and every Console.WriteLine goes nowhere
+        /// unless one is borrowed. AttachConsole(-1) borrows the caller's, which covers a prompt that is already
+        /// elevated. It does not cover the common case: app.manifest asks for administrator, so starting this from
+        /// an ordinary prompt spawns a fresh elevated process whose parent is no longer that console. The output
+        /// then vanished with no hint why, which is what an owner on board 8BAD saw running --lamps.
+        ///
+        /// Redirection is the case that must be left alone. support-info.cmd sends stdout to a file; AttachConsole
+        /// fails there too, but stdout is already the file, so allocating a console would steal it back and write
+        /// the report to a window nobody asked for. IsOutputRedirected is the guard.</summary>
+        static bool OpenConsole() {
+            try {
+                if (AttachConsole(-1)) { PointStdOutAtConsole(); return false; }
+                if (!Console.IsOutputRedirected && AllocConsole()) { PointStdOutAtConsole(); return true; }
+            } catch { }
+            return false;
+        }
+
+        static void PointStdOutAtConsole() {
+            var w = new System.IO.StreamWriter(Console.OpenStandardOutput()); w.AutoFlush = true; Console.SetOut(w);
+        }
+
+        /// <summary>A console we opened dies with the process and takes the output with it, so wait for a person.
+        /// The reader is built here rather than through Console.In because the cached one was made when this
+        /// process had no console at all.</summary>
+        static void HoldConsole(bool ours) {
+            if (!ours) return;
+            try {
+                Console.WriteLine();
+                Console.WriteLine("Press Enter to close.");
+                Console.SetIn(new System.IO.StreamReader(Console.OpenStandardInput()));
+                Console.ReadLine();
+            } catch { }
+        }
 
         /// <summary>--support: the report the Settings button produces, for anyone who would rather not open the
         /// window. Builds its own engine because this runs before the single-instance guard.</summary>
         static int WriteSupport(string[] args) {
-            try { if (AttachConsole(-1)) { var w = new System.IO.StreamWriter(Console.OpenStandardOutput()); w.AutoFlush = true; Console.SetOut(w); } } catch { }
+            bool ownConsole = OpenConsole();
             bool elev = false;
             try { elev = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } catch { }
             bool wantDemo = false;
@@ -131,19 +168,16 @@ namespace Ohman {
                 Console.WriteLine("saved to " + p);
             } catch (Exception ex) { Console.WriteLine("could not save: " + ex.Message); }
             try { eng.Dispose(); } catch { }
+            HoldConsole(ownConsole);
             return 0;
         }
 
         static int ListLamps() {
-            // This is a windows-subsystem binary, so it has no console of its own: run it from a prompt and every
-            // Console.WriteLine below went nowhere, which is exactly what it looked like to the first person who
-            // tried it. Borrow the console of whatever launched us and point stdout back at it. Redirection (which
-            // is how support-info.cmd calls this) already worked and still does; AttachConsole simply fails there.
-            try {
-                if (AttachConsole(-1)) {
-                    var w = new System.IO.StreamWriter(Console.OpenStandardOutput()); w.AutoFlush = true; Console.SetOut(w);
-                }
-            } catch { }
+            bool ownConsole = OpenConsole();
+            try { return ListLampsBody(); } finally { HoldConsole(ownConsole); }
+        }
+
+        static int ListLampsBody() {
             // Also goes to the log: this is launched from support-info.cmd and from shortcuts as often as from a
             // prompt, and the log is what people end up attaching to an issue anyway.
             Action<string> say = delegate(string s) { Console.WriteLine(s); Log.Write("lamps| " + s); };

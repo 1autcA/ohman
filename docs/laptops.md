@@ -1,4 +1,4 @@
-# Laptops
+﻿# Laptops
 
 Ohman talks to the HP BIOS mailbox (`hpqBIntM`), which every OMEN and Victus laptop exposes. What differs
 between models is which commands the firmware answers and which bytes each performance mode wants. That is
@@ -20,6 +20,7 @@ did what it says. Its settings are then fixed rather than worked out at run time
 |---|---|---|---|
 | OMEN Transcend 14 (2024) | `8C58` | 2026-09-12 | Checklist run on `8C58`: Core Ultra 9 185H + RTX 4070. Modes, fans, power gain, GPU power and four-zone lighting all confirmed against OMEN Gaming Hub 1101.2608. Graphics switching writes correctly but the restart it needs was never taken, so it is unconfirmed. `8E41` was listed here as the same machine. It is not: an owner reported a 2025 14-fb1xxx with a Core Ultra 9 285H and an RTX 5070, same firmware generation but different silicon. It is driven by the generic path and its own firmware answers; see [#2](https://github.com/P4R1H/ohman/issues/2). |
 | OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
+| OMEN 15z-en100 (2021) | `88D2` | 2026-09-13 | Owner confirmed it works. Listed in `hp-wmi`, driven with the mode bytes for its firmware generation. |
 | Victus 15-fa2405TX | `8DCF` | 2026-09-13 | Owner confirmed modes, fans and the keyboard backlight all work, with no HP software installed. Driven from the firmware's own answers. |
 | HyperX OMEN 15-gb0xxx (2026) | `8EEC` | 2026-09-13 | Ryzen 5 240 + RTX 5050, BIOS F.15. Max fan, manual, curve, auto, power gain, GPU power, graphics and four-zone lighting all confirmed by the owner. Reports **thermal policy v0**, so Eco and Balanced send the same byte and only Performance differs — see below. Base TDP 45 W, OMEN key 29/8613. |
 

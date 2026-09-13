@@ -1087,7 +1087,7 @@ namespace Ohman {
             txtFanRight.Visibility = link ? Visibility.Collapsed : Visibility.Visible;
             btnFanAction.Text = S.Fan == FanMode.Auto ? "Edit as curve" : "Reset curve";
             if (S.Fan == FanMode.Max) {
-                txtFanApplied.Text = "Loud" + (lastBiosTemp > 0 ? " · chassis " + lastBiosTemp + "°" : "");
+                txtFanApplied.Text = "Loud" + (ShowChassis(lastBiosTemp) ? " · chassis " + lastBiosTemp + "°" : "");
                 txtFanRight.Text = "Ctrl+Alt+M toggles";
             } else {
                 txtFanApplied.Text = E.GuardActive ? "Thermal guard: max fan until cool" : "Applied to " + E.ModeName;
@@ -1226,11 +1226,14 @@ namespace Ohman {
                 slPower.Value = S.TdpOffset; txtPower.Text = "+" + S.TdpOffset + " W";
                 GpuLevel g = E.EffectiveGpu;
                 string gpuName = g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base";
-                // 0 is not a chassis temperature, it is a firmware that does not implement 0x23. Saying "chassis 0" reads as a reading.
+                // Two ways this number lies. 0 means the firmware does not implement 0x23 at all. And on a board
+                // nobody has measured, the scale is unknown: one 8BCD sits at 50 and above around the clock while
+                // the laptop is cool to the touch. We already refuse to let that sensor drive the fans there
+                // (FanCurve.UseChassis), and showing it beside real temperatures is the same mistake one layer up.
                 // Same rule as the chassis reading: a board whose firmware never reported a base TDP has no
                 // wattage to show, and CurrentTdp there is a leftover slider offset with nothing under it.
                 txtHomeStatus.Text = (E.P.HasGpuPower ? gpuName : E.P.HasPowerGain ? E.CurrentTdp + " W" : "")
-                    + (lastBiosTemp > 0 ? " · chassis " + lastBiosTemp + "°" : "");
+                    + (ShowChassis(lastBiosTemp) ? " · chassis " + lastBiosTemp + "°" : "");
                 fanLinks.SetText(2, S.Fan == FanMode.Custom ? "Curve" : "Manual");
                 fanLinks.Select(S.Fan == FanMode.Auto ? 0 : S.Fan == FanMode.Max ? 1 : 2, IsVisible);
                 if (gpuSeg != null) { gpuSeg.Select(S.GpuAuto ? 3 : (int)g, IsVisible && cur == Page.Settings); txtGpuSub.Text = S.GpuAuto ? "Follows the mode" : g == GpuLevel.Max ? "Custom TGP + PPAB" : g == GpuLevel.Boost ? "PPAB" : "Base TGP"; }
@@ -1308,7 +1311,7 @@ namespace Ohman {
                     if (t >= 0 && t != lastBiosTemp) {
                         lastBiosTemp = t; GpuLevel g = E.EffectiveGpu;
                         txtHomeStatus.Text = (E.P.HasGpuPower ? (g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base") : E.P.HasPowerGain ? E.CurrentTdp + " W" : "")
-                            + (t > 0 ? " · chassis " + t + "°" : "");
+                            + (ShowChassis(t) ? " · chassis " + t + "°" : "");
                     }
                     reading = false;
                 });
@@ -1349,6 +1352,10 @@ namespace Ohman {
         /// scaling. In front of you it has to keep up with the eye; behind you it only feeds the tray number and the
         /// fan curve, and on battery even that can wait longer. The per-frame work (the footer, the fan readouts)
         /// has no reader at all when the window is hidden, so its timer stops outright.</summary>
+        /// <summary>Whether the chassis reading is worth putting on screen: it has to be a real number, and
+        /// it has to come from a board where somebody has seen what that number means.</summary>
+        bool ShowChassis(int c) { return c > 0 && E.P != null && E.P.Curve != null && E.P.Curve.UseChassis; }
+
         void PollRate() {
             // Whoever is reading these numbers sets the floor. The software fan curve steps every 5 s and steps from
             // the last reading it was given, so polling slower than that would make the fans answer a poll interval

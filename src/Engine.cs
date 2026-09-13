@@ -400,7 +400,7 @@ namespace Ohman {
                     }
                 }
             } catch (Exception ex) { Log.Write("fan tick: " + ex.Message); }
-            if (leaveMax) { Say("Max fan off · " + maxStopReason); SetFan(FanMode.Auto, S.Fan1, S.Fan2, false); }
+            if (leaveMax) { Say("Max fan off · " + maxStopReason); SetFan(fanBeforeMax, S.Fan1, S.Fan2, false); }
         }
 
         // Work the UI hands over runs on one thread in the order it was posted. The thread pool does not promise that,
@@ -512,6 +512,7 @@ namespace Ohman {
             return false;
         }
         bool fanFailureShown;
+        FanMode fanBeforeMax = FanMode.Auto;     // what Max interrupted; where leaving Max returns to
 
         /// <summary>Max-fan flag with the keep-alive trigger in front of it, the pair every fan path uses.</summary>
         void MaxFan(bool on, string what) { Try(delegate { Hw.GetFanCount(); Hw.SetMaxFan(on); }, what); }
@@ -649,7 +650,9 @@ namespace Ohman {
             Changed();
         }
         public void SetFan(FanMode mode, int f1, int f2, bool announce) {
-            if (mode == FanMode.Max && S.Fan != FanMode.Max) maxSince = DateTime.MinValue;   // asking for Max again starts a fresh session
+            // Max fan is a detour, not a destination: remember what it interrupted so leaving it puts the fans
+            // back under the curve the owner drew rather than handing them to the firmware's own.
+            if (mode == FanMode.Max && S.Fan != FanMode.Max) { maxSince = DateTime.MinValue; fanBeforeMax = S.Fan; }
             NoteFanMode(mode);
             S.Fan = mode; S.Fan1 = P.Curve.Clamp(f1); S.Fan2 = P.Curve.Clamp(f2); S.Save();
             if (GuardActive && mode != FanMode.Max) { Say("Thermal guard is holding max fan; " + Choice.Fan[Choice.Of(mode)] + " resumes when cool"); Changed(); return; }
@@ -657,7 +660,7 @@ namespace Ohman {
             if (announce) Say(mode == FanMode.Max ? "Max fan" : mode == FanMode.Manual ? "Fans " + Rpm(S.Fan1) + " / " + Rpm(S.Fan2) : mode == FanMode.Custom ? "Fans on your curve" : "Fans auto");
             Changed();
         }
-        public void ToggleMaxFan() { SetFan(S.Fan == FanMode.Max ? FanMode.Auto : FanMode.Max, S.Fan1, S.Fan2, false); }
+        public void ToggleMaxFan() { SetFan(S.Fan == FanMode.Max ? fanBeforeMax : FanMode.Max, S.Fan1, S.Fan2, false); }
 
         public void SetTdpOffset(int off, bool announce) {
             S.TdpOffset = Math.Max(0, Math.Min(MaxOffset, off)); S.Save();

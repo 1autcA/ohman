@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman — keyboard lighting.
 // HP laptops expose the keyboard backlight through the same BIOS mailbox as the performance controls, under a
 // second command id (0x20009). Zone colours sit in a 128-byte table, brightness/backlight in one byte whose bit 7
@@ -120,6 +120,13 @@ namespace Ohman {
             // plainly has lighting -- board 8574 returns rc 3 for every 0x20008 command and still answers 0x20009.
             try {
                 var c = l.GetColors(); int b = l.GetBacklight();
+                // Open question, deliberately not guessed at. Firmware with no lighting could in principle answer
+                // 0x20009/0x02 with rc 0 and a buffer of zeros, and since type 0 now means "standard layout"
+                // rather than "none", nothing would catch it. The obvious veto -- reject when the support bit is
+                // 0, the layout is standard, the colours are black and the backlight is off -- describes board
+                // 8574 exactly, and that board answers every lighting call while refusing every 0x20008 one. So
+                // the veto would re-break the machine this change was written for. The support report now records
+                // the bit for every reporter; decide it when a board that genuinely has no lighting turns up.
                 Log.Write("keyboard lighting: type " + type + " -> " + l.Describe + ", firmware "
                     + (declared ? "declares support" : "declares no support") + ", colours " + Join(c) + ", backlight 0x" + b.ToString("X2"));
             } catch (Exception ex) {

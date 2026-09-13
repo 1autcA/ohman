@@ -285,7 +285,12 @@ namespace Ohman {
             Changed();
         }
 
-        public void Init() {
+        public void Init() { Init(true); }
+
+        /// <summary>apply=false detects the board and the keyboard and stops there. Used by the support report,
+        /// which must not kill the vendor app, move the refresh rate, write a mode byte or start a fan timer --
+        /// and which can run while another Ohman is already doing all four.</summary>
+        public void Init(bool apply) {
             try { OnBattery = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline; } catch { }
             Board = Platforms.ReadBoard(); Model = Platforms.ReadModel();
             var prof = Platforms.Find(Board);
@@ -322,6 +327,9 @@ namespace Ohman {
                 try { GpuMode = Hw.GetGpuMode(); } catch (Exception ex) { Log.Write("graphics mode read: " + ex.Message); }
                 Log.Write("BIOS ok: fans=" + FanCount + " policy=v" + Info.ThermalPolicy + " swFan=" + Info.SwFanControl + " defPL4=" + Info.DefaultPl4 + "W baseTdp=" + Info.DefaultConcurrentTdp + "W raw=" + Info.Hex + (Hw.IsDemo ? " (DEMO)" : ""));
             } catch (Exception ex) { BiosOk = false; LastError = ex.Message; Log.Write("BIOS self-test FAILED: " + ex.Message); }
+            // Everything above only looked. Everything below changes the machine, and the support report wants the
+            // first half without the second: it must describe this laptop, not reconfigure it.
+            if (!apply) { InitLight(); Log.Write("probe only: nothing was applied"); return; }
             // take the key over only where we can also take over the fans; on an unknown board OGH stays in charge
             if (S.SuppressOgh && !Hw.IsDemo && Supported) { KillOgh(); new Thread(delegate() { SetOghTasks(true); }) { IsBackground = true }.Start(); }
             if (S.EcoOnBattery && OnBattery && ModeIndex != 0) { ecoForcedByBattery = true; modeBeforeBattery = ModeIndex; S.SavedModeOverride = modeBeforeBattery; S.ModeIndex = 0; Log.Write("on battery at start: Eco (user mode " + ModeNames[modeBeforeBattery] + " kept)"); }

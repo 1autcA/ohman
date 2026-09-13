@@ -116,7 +116,7 @@ namespace Ohman {
             if (!elev) Console.WriteLine("NOT ELEVATED - the firmware was not asked anything. Run this from an administrator prompt.\n");
             var s2 = Settings.Load(); s2.NoPersist = true;
             var eng = new Engine(hw2, s2);
-            try { eng.Init(); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }
+            try { eng.Init(false); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }   // false: describe the laptop, do not touch it
             string rep;
             try { rep = Support.Report(eng); } catch (Exception ex) { rep = "support report failed: " + ex; }
             Console.WriteLine(rep);

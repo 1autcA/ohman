@@ -92,9 +92,35 @@ namespace Ohman {
             }
         }
 
-        /// <summary>A prefilled "New laptop support" form. GitHub fills an issue form from query parameters named
-        /// after the field ids, and caps the whole URL at roughly 8 KB, so the report itself only goes in when it
-        /// fits. It is on the clipboard either way, and the form says so when it is not already in the box.</summary>
+        /// <summary>A prefilled "New laptop support" form. The report goes in the URL when it fits and is left
+        /// out when it does not, because GitHub's failure here is not graceful. Measured against the real
+        /// endpoint: up to about 6,100 characters answers 200, from roughly 7,000 it answers 500, and past 8,300
+        /// it answers 414. A reporter hit the 500 band and saw the form throw his data away and fall back to the
+        /// blank template, which is what "the template is corrupted" turned out to mean. The budget below is the
+        /// measured 200 ceiling with room to spare; the clipboard and the saved file carry the rest.</summary>
+        const int UrlBudget = 5900;
+
+        /// <summary>The handful of facts that decide whether a board can be driven, short enough to travel in a
+        /// URL. The full report cannot: squeezed and escaped it is over 8,000 characters, and GitHub answers 500
+        /// from about 7,000 and 414 past 8,300. So the issue opens already saying what this machine is and what
+        /// its firmware refused, and the report itself arrives with one Ctrl+V from the clipboard.</summary>
+        static string Summary(Engine e) {
+            var sb = new StringBuilder();
+            sb.AppendLine("(filled in by Ohman " + Program.Version + " - the full report is on your clipboard, paste it in the box below)");
+            sb.AppendLine();
+            sb.AppendLine("Board " + e.Board + ", " + (e.Supported ? (e.Generic ? "driven from the firmware's own answers" : "verified profile") : "NOT DRIVEN - read-only"));
+            if (e.P != null)
+                sb.AppendLine("Mode bytes: eco 0x" + e.P.ModeEco.ToString("X2") + " balanced 0x" + e.P.ModeBalanced.ToString("X2")
+                    + " performance 0x" + e.P.ModePerformance.ToString("X2") + " (v" + e.P.ThermalPolicy + ")"
+                    + (e.P.ModeEco == e.P.ModeBalanced ? "  [eco and balanced are the same byte on this firmware]" : ""));
+            sb.AppendLine("Fans: " + e.FanCount + "   Lighting: " + (e.Light == null ? "none detected" : e.Light.Describe));
+            sb.AppendLine("Power gain: " + (e.P != null && e.P.HasPowerGain ? "yes" : "no") + "   GPU power: " + (e.P != null && e.P.HasGpuPower ? "yes" : "no"));
+            if (e.LastError.Length > 0) sb.AppendLine("Last BIOS error: " + Scrub(e.LastError));
+            sb.AppendLine();
+            sb.AppendLine("What went wrong:");
+            return sb.ToString();
+        }
+
         public static string IssueUrl(Engine e, string report) {
             string model = "";
             try {
@@ -105,10 +131,20 @@ namespace Ohman {
             string url = Base
                 + "&title=" + Uri.EscapeDataString("Support: " + (model.Length > 0 ? model : "board " + e.Board) + " (board " + e.Board + ")")
                 + "&model=" + Uri.EscapeDataString(model)
-                + "&board=" + Uri.EscapeDataString(e.Board);
-            string with = url + "&supportinfo=" + Uri.EscapeDataString(report);
-            if (with.Length <= 7000) return with;
-            return url + "&supportinfo=" + Uri.EscapeDataString("(the report is on your clipboard - paste it here with Ctrl+V)");
+                + "&board=" + Uri.EscapeDataString(e.Board)
+                + "&wrong=" + Uri.EscapeDataString(Summary(e));
+            // Column padding is a quarter of the report and escapes to %20 three times over, so squeeze it for
+            // the URL only. The clipboard and the file keep the aligned version, which is the readable one.
+            var lines = report.Replace("\r\n", "\n").Split('\n');
+            var sb2 = new StringBuilder();
+            foreach (string line in lines) {
+                string s = line;
+                while (s.IndexOf("  ", StringComparison.Ordinal) >= 0) s = s.Replace("  ", " ");
+                sb2.Append(s.TrimEnd()).Append('\n');
+            }
+            string tight = sb2.ToString();
+            string with = url + "&supportinfo=" + Uri.EscapeDataString(tight);
+            return with.Length <= UrlBudget ? with : url;   // almost always the latter; the clipboard carries it
         }
 
         public static string Report(Engine e) {

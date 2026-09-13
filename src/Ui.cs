@@ -416,12 +416,15 @@ namespace Ohman {
                         try { Clipboard.SetText(r); copied = true; } catch { }      // the clipboard is shared; it can be busy
                         txtDiag.Text = r.TrimEnd(); txtDiag.Visibility = Visibility.Visible;
                         Remeasure(cur);
-                        ShowToast(copied ? "Support info copied — opening a prefilled issue" + (path.Length > 0 ? " (also saved beside the log)" : "")
-                                         : "Could not reach the clipboard; the text is below and saved beside the log", !copied);
-                        // Straight to a form with the model and board already in it, because the next thing anyone
-                        // does with this text is open that page and fill the same two fields in by hand.
+                        ShowToast(copied ? "Copied. Paste it into the issue, or drag support-info.txt in"
+                                         : "Saved as support-info.txt — drag it into the issue", !copied);
+                        // The form gets the model and board; the report goes over as a file, so nothing is lost to
+                        // a URL length limit. Explorer opens with it selected so it can be dragged into the issue.
                         try { Process.Start(new ProcessStartInfo(Support.IssueUrl(E, r)) { UseShellExecute = true }); }
                         catch (Exception ex) { Log.Write("could not open the issue form: " + ex.Message); }
+                        if (path.Length > 0)
+                            try { Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true }); }
+                            catch (Exception ex) { Log.Write("could not reveal the report: " + ex.Message); }
                     });
                 });
             };

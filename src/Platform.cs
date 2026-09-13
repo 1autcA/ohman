@@ -145,7 +145,9 @@ namespace Ohman {
             bool haveInfo = info != null && info.Valid;
             int policy = PolicyVersion(board, info);
             if (policy < 0) return null;                                 // no source for the mode bytes: stay read-only
-            var p = new PlatformProfile { Name = "Generic OMEN/Victus (board " + board + ")", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = policy };
+            // "Generic" read to owners as "your laptop is not supported", when it means the opposite: the profile was
+            // built from what this firmware itself reported, rather than from a profile somebody wrote for it.
+            var p = new PlatformProfile { Name = "OMEN/Victus " + board + " (from its own firmware)", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = policy };
             p.Curve = FanCurve.Transcend14();
             p.Curve.UseChassis = false;     // thresholds measured on one chassis; see FanCurve.UseChassis
             if (Families.In(Families.Victus, board)) { p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03; p.Notes = "Victus family (hp-wmi victus_thermal_profile_boards)"; }

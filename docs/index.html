@@ -396,8 +396,8 @@ footer p{margin:0 0 8px}
 
       <p class="fam">OMEN 15, 16 and 17 &middot; OMEN MAX 16 &middot; OMEN Transcend 14 and 16 &middot; Victus 15 and 16, including the S and R</p>
 
-      <p class="note">Note: two boards have been confirmed by their owners so far, an HP OMEN Transcend 14 (2024, board 8C58)
-      and an OMEN 15 / 17 (board 8748). <a href="#verify">Help get your laptop verified</a>.</p>
+      <p class="note">Note: <span id="nverified">several</span> boards have been confirmed by their owners so far.
+      <a href="#verify">Help get your laptop verified</a>.</p>
 
       <div class="tablewrap">
       <table class="models">
@@ -406,7 +406,7 @@ footer p{margin:0 0 8px}
         <tr><td>OMEN Transcend 14 (2024)</td><td class="ids">8C58</td><td class="st v">Verified</td></tr>
         <tr><td>HyperX OMEN 15-gb0xxx (2026)</td><td class="ids">8EEC</td><td class="st v">Verified</td></tr>
         <tr><td>Victus 15-fa2405TX</td><td class="ids">8DCF</td><td class="st v">Verified</td></tr>
-        <tr><td>OMEN 16-wf0120TX</td><td class="ids">8BAB</td><td class="st v">Verified</td></tr>
+        <tr><td>OMEN 16-wf0xxx (2023)</td><td class="ids">8BAB</td><td class="st v">Verified</td></tr>
         <tr><td>Victus 16-e0xxx</td><td class="ids">88EE</td><td class="st v">Verified</td></tr>
         <tr><td>OMEN 15z-en100 (2021)</td><td class="ids">88D2</td><td class="st v">Verified</td></tr>
         <tr><td>OMEN Transcend 14 (2025)</td><td class="ids">8E41</td><td class="st">Supported</td></tr>
@@ -416,7 +416,7 @@ footer p{margin:0 0 8px}
         <tr><td>OMEN 15 (2020)</td><td class="ids">8A15</td><td class="st">Supported</td></tr>
         <tr><td>OMEN 15 / 17 (2021)</td><td class="ids">8BAD</td><td class="st">Supported</td></tr>
         <tr><td>OMEN 16 / 17 (2021&ndash;2022)</td><td class="ids">8A42, 8A43</td><td class="st">Supported</td></tr>
-        <tr><td>Victus 16 (2021&ndash;2023)</td><td class="ids">88F8, 8A25</td><td class="st">Supported</td></tr>
+        <tr><td>Victus 16 (2021&ndash;2023)</td><td class="ids">88F8, 8A25, 8A26</td><td class="st">Supported</td></tr>
         <tr><td>Victus 16 S / R (2023&ndash;2024)</td><td class="ids">8A3D, 8B2F, 8BBE, 8BD4, 8BD5, 8C99, 8C9C</td><td class="st">Supported</td></tr>
         <tr><td>OMEN 15 / 17, 2018&ndash;2021 generations</td><td class="ids">84DA, 84DB, 84DC, 8572, 8573, 8574, 8575, 8601, 8602, 8603, 8604, 8605, 8606, 8607, 860A, 8746, 8747, 8749, 874A, 8786, 8787, 8788, 878A, 878B, 878C, 87B5, 886B, 886C, 88C8, 88CB, 88D1, 88F4, 88F5, 88F6, 88F7, 88FD, 88FE, 88FF, 8900, 8901, 8902, 8912, 8917, 8918, 8949, 894A, 89EB</td><td class="st">Supported</td></tr>
         <tr><td>OMEN 16 (2023&ndash;2025)</td><td class="ids">8BAA, 8BCA, 8BCD, 8D24, 8D26, 8D2F, 8E35</td><td class="st">Supported</td></tr>
@@ -489,6 +489,17 @@ footer p{margin:0 0 8px}
       el.hidden = false;          // a repository with no stars yet shows the button without a count
     });
   })['catch'](function () {});
+
+  // The count comes from the table below rather than a number written into the sentence, because the sentence
+  // said "two" for a week after the fifth owner confirmed theirs.
+  (function () {
+    var n = document.querySelectorAll('table.models td.st.v').length;
+    var el = document.getElementById('nverified');
+    if (!el || !n) { return; }
+    var words = ['no', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+                 'Eleven', 'Twelve'];
+    el.textContent = n < words.length ? words[n].toLowerCase() : String(n);
+  })();
 })();
 </script>
 

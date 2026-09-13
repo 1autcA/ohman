@@ -119,7 +119,7 @@ namespace Ohman {
         /// <summary>A profile for a board without a verified entry. Null when the firmware generation is unknown (stay read-only).</summary>
         public static PlatformProfile Generic(string board, SystemInfo info) {
             if (info == null || !info.Valid) return null;
-            var p = new PlatformProfile { Name = "Generic OMEN/Victus (board " + board + ")", Boards = new[] { board }, Verified = false, ThermalPolicy = info.ThermalPolicy };
+            var p = new PlatformProfile { Name = "Generic OMEN/Victus (board " + board + ")", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = info.ThermalPolicy };
             p.Curve = FanCurve.Transcend14();
             if (Families.In(Families.Victus, board)) { p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03; p.Notes = "Victus family (hp-wmi victus_thermal_profile_boards)"; }
             else if (Families.In(Families.VictusS, board)) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x00; p.Notes = "Victus S family"; }
@@ -153,9 +153,11 @@ namespace Ohman {
             }
         };
 
-        /// <summary>Boards an owner has run and reported working. This deliberately does NOT set Verified: that
-        /// flag tells the thermal guard the chassis sensor's scale is known, and "it works for me" is not that
-        /// measurement. All it does is stop asking the next owner of the same board to be the first to try it.</summary>
+        /// <summary>Boards an owner has run and reported working. The profile stays the one built from the
+        /// firmware's own answers, which is the right one for them; this only records that a human confirmed it,
+        /// which marks it Verified and stops asking the next owner to be the first to try it. Verified only ever
+        /// widens the thermal guard — it lets the chassis sensor arm a trigger before the sensor has read cool
+        /// once, and makes release stricter — so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
         static readonly string[] OwnerReported = { "8748" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }
 

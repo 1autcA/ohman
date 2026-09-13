@@ -301,8 +301,8 @@ namespace Ohman {
                 try { FanCount = Hw.GetFanCountPassive(); }   // never the 0x10 query here: it is the keep-alive trigger
                 catch (Exception ex) { FanCount = -1; Log.Write("no fan table (" + ex.Message + "): fan readout unavailable"); }
                 Info = Hw.GetSystemInfo();
-                if (!Info.Valid) throw new Exception("system data query returned nothing usable");
-                BiosOk = true;
+                BiosOk = true;                                 // the mailbox answers; what it will answer is decided below
+                if (!Info.Valid) Log.Write("system data (0x28) returned nothing usable: " + Info.Hex.Length + " bytes");
                 if (Supported && !Hw.IsDemo && Info.Valid && Info.ThermalPolicy != P.ThermalPolicy) {
                     Supported = false; Log.Write("thermal policy v" + Info.ThermalPolicy + " does not match the profile (v" + P.ThermalPolicy + "); switching to read-only");
                 }

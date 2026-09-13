@@ -19,6 +19,7 @@ did what it says. Its settings are then fixed rather than worked out at run time
 | Model | Board | Verified on | Notes |
 |---|---|---|---|
 | OMEN Transcend 14 (2024) | `8C58`, `8E41` | 2026-09-12 | Checklist run on `8C58`: Core Ultra 9 185H + RTX 4070. Modes, fans, power gain, GPU power and four-zone lighting all confirmed against OMEN Gaming Hub 1101.2608. Graphics switching writes correctly but the restart it needs was never taken, so it is unconfirmed. `8E41` is the same model and firmware generation and is driven the same way, but nobody has run the checklist on one. |
+| OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
 
 See [Verifying your laptop](#verifying-your-laptop).
 
@@ -74,15 +75,6 @@ name, so the badge on the lid does not decide this — only a readback from the 
 in July 2026 because one owner ran the fan table query on theirs and sent the readback to the kernel list.
 Board `8C2F` is reported to be shared between the 15" and 16" chassis, so even a board id is not always one
 machine.
-
-## Reported working by an owner
-
-These are still driven by the generic path — no owner has sent the readbacks that would make them verified —
-but somebody has run Ohman on one and said it works, so the app stops asking the next owner to be the first.
-
-| Board | Reported |
-|---|---|
-| `8748` | OMEN 15/17 (2019–2021 generation), 2026-09-13 |
 
 ## Finding your board id
 

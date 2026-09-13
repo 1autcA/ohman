@@ -51,6 +51,11 @@ namespace Ohman {
         public int[] IrTemps = { 40, 52 };           // BIOS chassis/IR sensor (0x23)
         public int[] IrLevels = { 0, 46 };
         public int Floor = 18, Ceiling = 57;         // OGH's bounds; the firmware's own table never goes below 19
+        /// <summary>Whether the chassis sensor is allowed to raise the fans. Its reading is not on a scale we
+        /// know on a board nobody has measured: one owner's 8BCD sits at 54 C idle, which against these
+        /// thresholds pins the fans near the ceiling while the CPU is at 45. The thermal guard already refuses
+        /// to trust this sensor until it has read cool once; the curve had no such caution.</summary>
+        public bool UseChassis = true;
         public int StepPerTick = 3;                  // OGH moves ~3 levels per update
         public int Fallback = 35;                    // level used when no temperature is available at all
 
@@ -69,7 +74,7 @@ namespace Ohman {
             bool silicon = !double.IsNaN(cpu) || !double.IsNaN(gpu);
             int c = double.IsNaN(cpu) ? 0 : Interp(CpuTemps, CpuLevels, cpu);
             int g = double.IsNaN(gpu) ? 0 : Interp(GpuTemps, GpuLevels, gpu);
-            int r = double.IsNaN(ir) ? 0 : Interp(IrTemps, IrLevels, ir);
+            int r = (double.IsNaN(ir) || !UseChassis) ? 0 : Interp(IrTemps, IrLevels, ir);
             int lvl = silicon ? Math.Max(c, Math.Max(g, r)) : Math.Max(Fallback, r);
             lvl = Math.Max(Floor, Math.Min(Ceiling, lvl));
             return new int[] { lvl, lvl };
@@ -142,6 +147,7 @@ namespace Ohman {
             if (policy < 0) return null;                                 // no source for the mode bytes: stay read-only
             var p = new PlatformProfile { Name = "Generic OMEN/Victus (board " + board + ")", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = policy };
             p.Curve = FanCurve.Transcend14();
+            p.Curve.UseChassis = false;     // thresholds measured on one chassis; see FanCurve.UseChassis
             if (Families.In(Families.Victus, board)) { p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03; p.Notes = "Victus family (hp-wmi victus_thermal_profile_boards)"; }
             else if (Families.In(Families.VictusS, board)) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x00; p.Notes = "Victus S family"; }
             else if (policy == 0) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x02; p.Notes = "thermal policy v0"; }

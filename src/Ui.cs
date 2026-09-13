@@ -52,7 +52,7 @@ namespace Ohman {
         readonly NavBtn[] nav = new NavBtn[4]; Border railPill; TranslateTransform railPillT; Canvas railCanvas; FrameworkElement rail, logoHost; StackPanel navBottom;
         ColorSource accentSrc; SolidColorBrush accent;
         // home
-        TextBlock txtHomeTitle, txtHomeStatus, subCpu, subGpu, txtPower, txtFoot, txtFootRight, txtLightSub, txtErr, txtInfo; Run bigCpu, bigGpu, bigFan1, bigFan2;
+        TextBlock txtHomeTitle, txtHomeStatus, subCpu, subGpu, txtPower, txtFoot, txtFootRight, txtLightSub, txtErr, txtInfo, btnSupport; Run bigCpu, bigGpu, bigFan1, bigFan2;
         FrameworkElement demoBadge, errBanner, infoBanner, powerRow, lightRow; Border miniHost, infoClose; Ellipse dotHb;
         Seg modeSeg; LinkSeg fanLinks; Slider slPower;
         // fans
@@ -203,7 +203,7 @@ namespace Ohman {
             tgGuard = F<ToggleButton>("TgGuard"); tgUpdateAuto = F<ToggleButton>("TgUpdateAuto");
             txtGuardSub = F<TextBlock>("TxtGuardSub"); txtMaxCoolSub = F<TextBlock>("TxtMaxCoolSub"); txtKeyCmdHint = F<TextBlock>("TxtKeyCmdHint");
             txtUpdate = F<TextBlock>("TxtUpdate"); btnUpdate = F<TextBlock>("BtnUpdate");
-            btnDiag = F<TextBlock>("BtnDiag"); btnLog = F<TextBlock>("BtnLog"); btnExit = F<TextBlock>("BtnExit"); txtDiag = F<TextBlock>("TxtDiag"); btnClose = F<Button>("BtnClose");
+            btnDiag = F<TextBlock>("BtnDiag"); btnSupport = F<TextBlock>("BtnSupport"); btnLog = F<TextBlock>("BtnLog"); btnExit = F<TextBlock>("BtnExit"); txtDiag = F<TextBlock>("TxtDiag"); btnClose = F<Button>("BtnClose");
             toast = F<Border>("Toast"); txtToast = F<TextBlock>("TxtToast");
             btnExit.Text = "Exit " + Program.DisplayName;
             foreach (string n in new[] { "SecKey", "SecPower", "SecDisplay", "SecApp" }) Track(n);
@@ -396,6 +396,34 @@ namespace Ohman {
                 if (txtDiag.Visibility == Visibility.Visible) { txtDiag.Visibility = Visibility.Collapsed; return; }
                 txtDiag.Text = "running…"; txtDiag.Visibility = Visibility.Visible;
                 Slow(delegate { string d = E.Diagnostics(); Log.Write(d); Dispatcher.BeginInvoke((Action)delegate { txtDiag.Text = d.TrimEnd(); }); });
+            };
+            // One button instead of "download the zip, find tools\, run it as administrator". Ohman is already
+            // elevated, so it can ask the firmware the same questions directly, and the answer goes straight to
+            // the clipboard because the next thing anyone does with it is paste it into an issue.
+            btnSupport.MouseLeftButtonUp += delegate {
+                btnSupport.Text = "collecting…";
+                Slow(delegate {
+                    string r;
+                    try { r = Support.Report(E); } catch (Exception ex) { r = "support report failed: " + ex.Message; }
+                    string path = "";
+                    try {
+                        path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "support-info.txt");
+                        System.IO.File.WriteAllText(path, r);
+                    } catch { path = ""; }
+                    Dispatcher.BeginInvoke((Action)delegate {
+                        btnSupport.Text = "Copy support info";
+                        bool copied = false;
+                        try { Clipboard.SetText(r); copied = true; } catch { }      // the clipboard is shared; it can be busy
+                        txtDiag.Text = r.TrimEnd(); txtDiag.Visibility = Visibility.Visible;
+                        Remeasure(cur);
+                        ShowToast(copied ? "Support info copied — opening a prefilled issue" + (path.Length > 0 ? " (also saved beside the log)" : "")
+                                         : "Could not reach the clipboard; the text is below and saved beside the log", !copied);
+                        // Straight to a form with the model and board already in it, because the next thing anyone
+                        // does with this text is open that page and fill the same two fields in by hand.
+                        try { Process.Start(new ProcessStartInfo(Support.IssueUrl(E, r)) { UseShellExecute = true }); }
+                        catch (Exception ex) { Log.Write("could not open the issue form: " + ex.Message); }
+                    });
+                });
             };
             btnLog.MouseLeftButtonUp += delegate { try { Process.Start(new ProcessStartInfo(Log.Path) { UseShellExecute = true }); } catch (Exception ex) { ShowToast("Cannot open log: " + ex.Message, true); } };
             btnExit.MouseLeftButtonUp += delegate { ExitApp(); };

@@ -3,6 +3,7 @@
 //   Ohman.exe                 normal start (elevated build asks for UAC once)
 //   Ohman.exe --hidden        start minimised to the tray (used by the autostart task)
 //   Ohman.exe --demo          force simulated hardware
+//   Ohman.exe --support       write the support report (clipboard-free path for issue reports)
 //   Ohman.exe --demo --board 8A25   simulate another board id (shows the generic profile the engine would build)
 //   Ohman.exe --screenshot f.png [--settings]   render the window to a PNG and exit (UI preview)
 //   Ohman.exe --lamps        list the HID lighting devices this machine has and exit (read-only; support data)
@@ -46,6 +47,9 @@ namespace Ohman {
                 else if (a == "--board" && i + 1 < args.Length) Platforms.BoardOverride = args[++i];   // pretend to be another board (with --demo: see what generic mode would build)
             }
             foreach (string a0 in args) if (a0.ToLowerInvariant() == "--lamps") return ListLamps();
+            // Before the single-instance guard, like --lamps: with Ohman already running, anything after it
+            // just signals the live window and exits, which made this silently do nothing.
+            foreach (string a0 in args) if (a0.ToLowerInvariant() == "--support") return WriteSupport(args);
             for (int i = 0; i + 1 < args.Length; i++)
                 if (args[i].ToLowerInvariant() == "--make-ico") { MainWindow.WriteIco(args[i + 1], Ui.BalColor); return 0; }   // build aid: writes the app icon
             bool wantExit = false;
@@ -99,6 +103,31 @@ namespace Ohman {
         /// On a four-zone laptop this finds HP's virtual device with its four lamps; on a per-key one it should find
         /// the keyboard itself with a lamp per key, which is what Ohman would drive.</summary>
         [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AttachConsole(int processId);
+
+        /// <summary>--support: the report the Settings button produces, for anyone who would rather not open the
+        /// window. Builds its own engine because this runs before the single-instance guard.</summary>
+        static int WriteSupport(string[] args) {
+            try { if (AttachConsole(-1)) { var w = new System.IO.StreamWriter(Console.OpenStandardOutput()); w.AutoFlush = true; Console.SetOut(w); } } catch { }
+            bool elev = false;
+            try { elev = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } catch { }
+            bool wantDemo = false;
+            foreach (string a in args) if (a.ToLowerInvariant() == "--demo") wantDemo = true;
+            IHardware hw2 = (wantDemo || !elev) ? (IHardware)new DemoHardware() : new Bios();
+            if (!elev) Console.WriteLine("NOT ELEVATED - the firmware was not asked anything. Run this from an administrator prompt.\n");
+            var s2 = Settings.Load(); s2.NoPersist = true;
+            var eng = new Engine(hw2, s2);
+            try { eng.Init(); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }
+            string rep;
+            try { rep = Support.Report(eng); } catch (Exception ex) { rep = "support report failed: " + ex; }
+            Console.WriteLine(rep);
+            try {
+                string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "support-info.txt");
+                System.IO.File.WriteAllText(p, rep);
+                Console.WriteLine("saved to " + p);
+            } catch (Exception ex) { Console.WriteLine("could not save: " + ex.Message); }
+            try { eng.Dispose(); } catch { }
+            return 0;
+        }
 
         static int ListLamps() {
             // This is a windows-subsystem binary, so it has no console of its own: run it from a prompt and every

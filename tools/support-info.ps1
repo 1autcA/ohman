@@ -76,6 +76,7 @@ if ($elevated) {
             $bytes = @(); if ($od -and $od.Data) { $bytes = @($od.Data) }
             "rc=" + $(if ($od) { $od.rwReturnCode } else { "?" }) + " data=" + (($bytes | Select-Object -First 40 | ForEach-Object { $_.ToString('X2') }) -join ' ')
         }
+        L ("  0x20009/01 support:  " + (K 0x01 @(0,0,0,0) 128) + "   <- bit 0 of byte 0 = keyboard backlight supported")
         L ("  0x20009/02 colours:  " + (K 0x02 @(0) 128))
         L ("  0x20009/04 backlight:" + (K 0x04 @(0) 128))
     } catch { L ("  BIOS query failed: " + (Scrub $_.Exception.Message)) }
@@ -187,7 +188,26 @@ try {
     }
 } catch { L ("  (could not read OGH logs: " + (Scrub $_.Exception.Message) + ")") }
 
-L ""; L "Ohman\'s own log (what it decided about this board, and why):"
+L ""; L "ACPI thermal zones (what Windows exposes; Ohman picks the hottest valid one):"
+try {
+    $cat = New-Object System.Diagnostics.PerformanceCounterCategory('Thermal Zone Information')
+    $names = $cat.GetInstanceNames() | Sort-Object
+    if (-not $names) { L "  (none - this machine exposes no ACPI thermal zone)" }
+    foreach ($n in $names) {
+        try {
+            $pc = New-Object System.Diagnostics.PerformanceCounter('Thermal Zone Information','Temperature',$n,$true)
+            $null = $pc.NextValue(); Start-Sleep -Milliseconds 120
+            $k = $pc.NextValue()
+            $c = [Math]::Round($k - 273.15, 1)
+            $note = if ($k -lt 283 -or $k -gt 398) { '  (outside 10-125 C, Ohman ignores it)' } else { '' }
+            L ('  {0,-34} {1,7} C{2}' -f (Scrub $n), $c, $note)
+            $pc.Dispose()
+        } catch { L ('  {0,-34}  unreadable' -f (Scrub $n)) }
+    }
+    L "  If the number above never moves while the machine is busy, that zone is not the CPU and that is worth saying."
+} catch { L ('  (thermal zones unavailable: ' + (Scrub $_.Exception.Message) + ')') }
+
+L ""; L "Ohman's own log (what it decided about this board, and why):"
 # If they have run Ohman at all, this says which profile it picked, which commands failed and what the
 # thermal zone reads. It is the single most useful thing in a bug report and people rarely think to send it.
 try {

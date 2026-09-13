@@ -1541,6 +1541,8 @@ namespace Ohman {
             try { E.Dispose(); } catch { }
             try { sensors.Dispose(); } catch { }
             Log.Write("exit");
+            // Last, because everything above still logs. The dialog said the log goes too, so it has to.
+            if (resetting) { try { Log.Delete(); } catch { } }
             Application.Current.Shutdown();
         }
 

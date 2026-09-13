@@ -451,6 +451,7 @@ namespace Ohman {
         /// starting a game would therefore leave the fans idle while the chips climb. Fallback is the level
         /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
         /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
+        /// <remarks>The summary above belongs to Park, further down. FactoryReset's own is next.</remarks>
         /// <summary>Put the machine back the way it was, then let the caller quit. Everything Ohman changes
         /// outside its own folder is undone here, vendor software first so the laptop has its own tools back.
         ///

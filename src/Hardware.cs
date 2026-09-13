@@ -17,10 +17,22 @@ namespace Ohman {
 
     public static class Log {
         static readonly object Sync = new object();
+        static bool off;                        // set by Delete: the reset is leaving, nothing more should be written
+        /// <summary>Remove the log and its rotated copy. The reset dialog promises the log goes with the settings,
+        /// and it is the only caller. Writing is switched off first so the teardown after it cannot recreate the
+        /// file we just deleted.</summary>
+        public static void Delete() {
+            lock (Sync) {
+                off = true;
+                try { if (File.Exists(Path)) File.Delete(Path); } catch { }
+                try { if (File.Exists(Path + ".1")) File.Delete(Path + ".1"); } catch { }
+            }
+        }
         public static string Path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Program.FileStem + ".log");
         public static void Write(string s) {
             try {
                 lock (Sync) {
+                    if (off) return;
                     var fi = new FileInfo(Path);
                     if (fi.Exists && fi.Length > 1024 * 1024) {
                         string old = Path + ".1";
@@ -165,7 +177,8 @@ namespace Ohman {
                     for (int i = 0; i < 2; i++) { int nib = (t[0] >> (i * 4)) & 0xF; if (nib >= 1 && nib <= 5) n++; }
                 }
             } catch { }
-            if (n == 0) { try { var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length > 0) n = d[0]; } catch { } }
+            bool asked = false;
+            if (n == 0) { try { var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length > 0) { n = d[0]; asked = true; } } catch { } }
             // A Victus 16-d1xxx (board 8A26) declares one fan in 0x2C and one in the fan table, then reports two
             // live speeds. It has two fans, so the declaration is the part that is wrong. Believe the speeds, but
             // only ever upwards: 0x2D reads 0 for a fan that is stopped, so a pair of zeroes proves nothing.
@@ -175,7 +188,9 @@ namespace Ohman {
                     if (lv.Length > 1 && lv[0] > 0 && lv[1] > 0) n = 2;
                 } catch { }
             }
-            return n > 0 ? n : -1;
+            // asked distinguishes a firmware that answered zero from one that would not answer at all, which is
+            // what this returned before the two-fan check was added in front of it.
+            return n > 0 ? n : (asked ? 0 : -1);
         }
         public int GetFanTableMax() {
             var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length < 2) return -1;

@@ -107,9 +107,15 @@ namespace Ohman {
             while (!stop) {
                 wake.Reset();
                 var s = new SensorSnapshot();
+                // The same 283..398 K window InitCounters uses, applied on every read and not only the first.
+                // Taking the maximum across zones means one zone reporting nonsense decides the answer for all of
+                // them, and a high enough number would hold the thermal guard on and the fans at maximum.
                 double hot = double.NaN;
                 for (int i = 0; i < thermals.Length; i++) {
-                    try { double k = thermals[i].NextValue(); if (k > 200 && (double.IsNaN(hot) || k > hot)) hot = k; } catch { }
+                    try {
+                        double k = thermals[i].NextValue();
+                        if (k >= 283 && k <= 398 && (double.IsNaN(hot) || k > hot)) hot = k;
+                    } catch { }
                 }
                 if (!double.IsNaN(hot)) s.CpuTemp = Math.Round(hot - 273.15, 1);
                 try { if (cpuUtil != null) s.CpuLoad = Math.Min(100, cpuUtil.NextValue()); } catch { }

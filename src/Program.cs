@@ -109,6 +109,7 @@ namespace Ohman {
         /// the keyboard itself with a lamp per key, which is what Ohman would drive.</summary>
         [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AttachConsole(int processId);
         [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AllocConsole();
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int which);
 
         /// <summary>Give the console-shaped switches somewhere to print, and say whether we opened it ourselves.
         ///
@@ -120,11 +121,19 @@ namespace Ohman {
         ///
         /// Redirection is the case that must be left alone. support-info.cmd sends stdout to a file; AttachConsole
         /// fails there too, but stdout is already the file, so allocating a console would steal it back and write
-        /// the report to a window nobody asked for. IsOutputRedirected is the guard.</summary>
+        /// the report to a window nobody asked for.
+        ///
+        /// The guard has to be the standard output handle itself, not Console.IsOutputRedirected. That property
+        /// asks whether stdout is a character device, and a process with no console at all has a NULL handle whose
+        /// file type is UNKNOWN, so it answers "redirected" for the exact case this fallback exists to serve. It is
+        /// cached on first read as well. A NULL or INVALID handle means nobody is listening and a console of our
+        /// own can do no harm; anything else is a real destination and must be left alone.</summary>
         static bool OpenConsole() {
             try {
                 if (AttachConsole(-1)) { PointStdOutAtConsole(); return false; }
-                if (!Console.IsOutputRedirected && AllocConsole()) { PointStdOutAtConsole(); return true; }
+                IntPtr h = GetStdHandle(-11);                                  // STD_OUTPUT_HANDLE
+                bool nobodyListening = h == IntPtr.Zero || h == new IntPtr(-1);
+                if (nobodyListening && AllocConsole()) { PointStdOutAtConsole(); return true; }
             } catch { }
             return false;
         }

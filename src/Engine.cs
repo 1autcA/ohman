@@ -437,6 +437,16 @@ namespace Ohman {
         /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
         /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
         public void Park() {
+            // Give the keyboard back before anything else. To paint it at all we switch Windows Dynamic Lighting
+            // off, and we were never switching it back: quitting left the keyboard frozen on the last thing we
+            // wrote, with Windows told to keep out of it. One owner uninstalled Ohman, rebooted, and still had
+            // our colours, because nothing left on the machine was allowed to change them.
+            try {
+                if (!Hw.IsDemo && S.Light != 2 && WinLighting.Present && !WinLighting.HasControl) {
+                    WinLighting.SetControl(true);
+                    Log.Write("handed the keyboard back to Windows Dynamic Lighting");
+                }
+            } catch (Exception ex) { Log.Write("release lighting: " + ex.Message); }
             if (!BiosOk || Hw.IsDemo || ReadOnly) return;
             if (GuardActive || S.Fan == FanMode.Max) return;            // already at maximum: leave it there
             try {

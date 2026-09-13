@@ -160,7 +160,9 @@ namespace Ohman {
                 var t = Call(OP_FAN_TYPE, Z4, 128);
                 if (t.Length > 0) {
                     int n = 0;
-                    for (int i = 0; i < 4; i++) { int nib = (t[0] >> (i * 4)) & 0xF; if (i < 2 && nib != 0) n++; }
+                    // Two nibbles in a byte, and only 1..5 are fan types. Firmware answering 0xFF instead of
+                    // refusing would otherwise read as two fans and skip the fan table that knows better.
+                    for (int i = 0; i < 2; i++) { int nib = (t[0] >> (i * 4)) & 0xF; if (nib >= 1 && nib <= 5) n++; }
                     if (n > 0) return n;
                 }
             } catch { }

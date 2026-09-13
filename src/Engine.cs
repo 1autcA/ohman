@@ -98,6 +98,9 @@ namespace Ohman {
         public bool LowHzOnBattery = false;         // lowest refresh rate on battery, back to RefreshHz (or the highest) on AC
         public bool TrayTemp = true;                // CPU temperature drawn on the tray icon
         public int PollMs = 2000;                   // sensor refresh while the window is open
+        public bool TookWinLighting = false;        // we switched Windows Dynamic Lighting off and owe it back
+        public bool PerKeyReset = false;            // the one-time clear of the all-white per-key array
+        public int FanBeforeMax = 0;                // FanMode that Max interrupted; survives a restart
         public bool InfoDismissed = false;          // the first-on-this-board note, closed by the user
         public bool Guard = true;                   // thermal guard: force max fan when the machine runs away
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
@@ -161,6 +164,9 @@ namespace Ohman {
                         case "UpdateChecked": { long l; if (long.TryParse(v, out l)) s.UpdateChecked = l; break; }
                         case "CheckedFrom": s.CheckedFrom = v; break;
                         case "PollMs": { int pm; if (int.TryParse(v, out pm) && pm >= 500 && pm <= 5000) s.PollMs = pm; break; }
+                        case "TookWinLighting": if (bool.TryParse(v, out b)) s.TookWinLighting = b; break;
+                        case "PerKeyReset": if (bool.TryParse(v, out b)) s.PerKeyReset = b; break;
+                        case "FanBeforeMax": if (TryInt(v, out n)) s.FanBeforeMax = Math.Max(0, Math.Min(3, n)); break;
                         case "LatestVersion": s.LatestVersion = v.Length > 24 ? v.Substring(0, 24) : v; break;
                         case "WinX": if (TryInt(v, out n)) s.WinX = n; break;
                         case "WinY": if (TryInt(v, out n)) s.WinY = n; break;
@@ -211,6 +217,7 @@ namespace Ohman {
                 sb.AppendLine("Guard=" + Guard); sb.AppendLine("UpdateOnLaunch=" + UpdateOnLaunch);
                 sb.AppendLine("MaxBackWhenCool=" + MaxBackWhenCool); sb.AppendLine("MaxStopAfterMin=" + MaxStopAfterMin); sb.AppendLine("ManualLinked=" + ManualLinked);
                 sb.AppendLine("UpdateChecked=" + UpdateChecked); sb.AppendLine("LatestVersion=" + LatestVersion); sb.AppendLine("CheckedFrom=" + CheckedFrom); sb.AppendLine("PollMs=" + PollMs);
+                sb.AppendLine("TookWinLighting=" + TookWinLighting); sb.AppendLine("PerKeyReset=" + PerKeyReset); sb.AppendLine("FanBeforeMax=" + FanBeforeMax);
                 sb.AppendLine("WinX=" + WinX); sb.AppendLine("WinY=" + WinY); sb.AppendLine("StartHidden=" + StartHidden);
                 sb.AppendLine("# Name=   (optional: a different display name for the window and tray; no rebuild needed)");
                 if (!string.IsNullOrEmpty(Name)) sb.AppendLine("Name=" + Name);
@@ -288,8 +295,9 @@ namespace Ohman {
             if (!force && !otherBuild && S.UpdateChecked != 0 && (DateTime.Now - LastUpdateCheck).TotalHours < 24) return;
             string tag = Update.LatestTag();
             S.UpdateChecked = DateTime.Now.Ticks;
-            S.CheckedFrom = Program.Version;
-            if (tag != null) S.LatestVersion = tag;
+            // Only a check that actually reached GitHub may claim the cache for this build. Stamping it on a
+            // failed fetch spends the new-build recheck on nothing and leaves a stale tag for another day.
+            if (tag != null) { S.LatestVersion = tag; S.CheckedFrom = Program.Version; }
             S.Save();
             if (force) Say(tag == null ? "Update check failed" : Update.Newer(tag, Program.Version) ? "Version " + tag + " is available" : "Ohman is up to date");
             Changed();
@@ -442,8 +450,9 @@ namespace Ohman {
             // wrote, with Windows told to keep out of it. One owner uninstalled Ohman, rebooted, and still had
             // our colours, because nothing left on the machine was allowed to change them.
             try {
-                if (!Hw.IsDemo && S.Light != 2 && WinLighting.Present && !WinLighting.HasControl) {
+                if (!Hw.IsDemo && S.TookWinLighting && WinLighting.Present) {
                     WinLighting.SetControl(true);
+                    S.TookWinLighting = false; S.Save();
                     Log.Write("handed the keyboard back to Windows Dynamic Lighting");
                 }
             } catch (Exception ex) { Log.Write("release lighting: " + ex.Message); }
@@ -524,7 +533,7 @@ namespace Ohman {
             return false;
         }
         bool fanFailureShown;
-        FanMode fanBeforeMax = FanMode.Auto;     // what Max interrupted; where leaving Max returns to
+        FanMode fanBeforeMax { get { return (FanMode)S.FanBeforeMax; } set { S.FanBeforeMax = (int)value; } }
 
         /// <summary>Max-fan flag with the keep-alive trigger in front of it, the pair every fan path uses.</summary>
         void MaxFan(bool on, string what) { Try(delegate { Hw.GetFanCount(); Hw.SetMaxFan(on); }, what); }
@@ -582,8 +591,12 @@ namespace Ohman {
             // the floor slider raises the lowest level the curve may drive; the ramp is how many levels a 5 s tick may move (5 s per step = the vendor's 3)
             int floor = Math.Max(P.Curve.Floor, Math.Min(P.Curve.Ceiling, S.Cur.CurveFloor));
             int step = Math.Max(1, Math.Min(P.Curve.Ceiling, (int)Math.Round(P.Curve.StepPerTick * 5.0 / Math.Max(1, S.Cur.CurveRamp))));
+            // UseChassis has to come across too. It is false on a board nobody has measured, and leaving it to
+            // the field default meant Custom mode quietly went back to letting an uncalibrated chassis sensor
+            // raise the fans -- on the one board whose owner reported that exact problem, in the one mode he uses.
             return new FanCurve { CpuTemps = CurveTemps, CpuLevels = lv, GpuTemps = CurveTemps, GpuLevels = gl, IrTemps = P.Curve.IrTemps, IrLevels = P.Curve.IrLevels,
-                Floor = floor, Ceiling = P.Curve.Ceiling, StepPerTick = step, Fallback = Math.Max(floor, P.Curve.Fallback) };
+                Floor = floor, Ceiling = P.Curve.Ceiling, StepPerTick = step, Fallback = Math.Max(floor, P.Curve.Fallback),
+                UseChassis = P.Curve.UseChassis };
         }
         /// <summary>The vendor curve sampled at the editor's temperatures, for the dashed reference line.</summary>
         public int[] VendorCurveAt(bool gpu) {
@@ -664,7 +677,7 @@ namespace Ohman {
         public void SetFan(FanMode mode, int f1, int f2, bool announce) {
             // Max fan is a detour, not a destination: remember what it interrupted so leaving it puts the fans
             // back under the curve the owner drew rather than handing them to the firmware's own.
-            if (mode == FanMode.Max && S.Fan != FanMode.Max) { maxSince = DateTime.MinValue; fanBeforeMax = S.Fan; }
+            if (mode == FanMode.Max && S.Fan != FanMode.Max) { maxSince = DateTime.MinValue; fanBeforeMax = S.Fan; }   // saved with S below
             NoteFanMode(mode);
             S.Fan = mode; S.Fan1 = P.Curve.Clamp(f1); S.Fan2 = P.Curve.Clamp(f2); S.Save();
             if (GuardActive && mode != FanMode.Max) { Say("Thermal guard is holding max fan; " + Choice.Fan[Choice.Of(mode)] + " resumes when cool"); Changed(); return; }
@@ -892,6 +905,13 @@ namespace Ohman {
                     else Log.Write("per-key board with no HID lighting interface we can drive; colours left to Windows");
                 }
                 if (Light == null) return;
+                // One-time repair. Before this build a per-key keyboard was initialised to white for every lamp,
+                // and InitLight then saved that array as the owner's own colours. It is the right length, so it
+                // parses cleanly and would be painted straight back. Drop it once and let the new default stand.
+                if (Light.Kind == LightKind.PerKey && !S.PerKeyReset) {
+                    S.LightColors = ""; S.PerKeyReset = true; S.Save();
+                    Log.Write("cleared the saved per-key colours once; they were the old all-white default");
+                }
                 var fw = Light.GetColors();
                 LightColors = ParseColors(S.LightColors, Light.Zones);
                 if (LightColors == null) { LightColors = fw; S.LightColors = JoinColors(fw); }    // first run: keep what the keyboard shows now
@@ -913,7 +933,10 @@ namespace Ohman {
             if (Light == null) return;
             StopEffect();
             if (S.Light == 2) { if (WinLighting.Present) WinLighting.SetControl(true); return; }      // Windows paints; we stay out of it
-            if (WinLighting.Present && WinLighting.HasControl) WinLighting.SetControl(false);        // take the keyboard first or Windows overwrites us
+            // Record that we took it. Plenty of people switch Dynamic Lighting off themselves because it fights
+            // vendor software, and handing it back on exit to someone who never had it on would be us turning a
+            // Windows feature on behind their back.
+            if (WinLighting.Present && WinLighting.HasControl) { S.TookWinLighting = true; S.Save(); WinLighting.SetControl(false); }   // take the keyboard first or Windows overwrites us
             TryLight(delegate {
                 if (S.Light == 1) Light.SetColors(Scaled(LightColors));
                 Light.SetBacklight(S.Light == 1, 100);                                              // the level byte OGH writes; brightness is in the colours

@@ -428,13 +428,13 @@ namespace Ohman {
                         Remeasure(cur);
                         ShowToast(copied ? "Copied. Paste it into the issue, or drag support-info.txt in"
                                          : "Saved as support-info.txt — drag it into the issue", !copied);
-                        // The form gets the model and board; the report goes over as a file, so nothing is lost to
-                        // a URL length limit. Explorer opens with it selected so it can be dragged into the issue.
-                        try { Process.Start(new ProcessStartInfo(Support.IssueUrl(E, r)) { UseShellExecute = true }); }
-                        catch (Exception ex) { Log.Write("could not open the issue form: " + ex.Message); }
+                        // Explorer first, browser second, so the issue form is the window left in front. The
+                        // report is too big for a URL, so it travels as a paste or as the revealed file.
                         if (path.Length > 0)
                             try { Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true }); }
                             catch (Exception ex) { Log.Write("could not reveal the report: " + ex.Message); }
+                        try { Process.Start(new ProcessStartInfo(Support.IssueUrl(E, r)) { UseShellExecute = true }); }
+                        catch (Exception ex) { Log.Write("could not open the issue form: " + ex.Message); }
                     });
                 });
             };

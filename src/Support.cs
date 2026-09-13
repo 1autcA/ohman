@@ -92,12 +92,9 @@ namespace Ohman {
             }
         }
 
-        /// <summary>A prefilled "New laptop support" form. The report goes in the URL when it fits and is left
-        /// out when it does not, because GitHub's failure here is not graceful. Measured against the real
-        /// endpoint: up to about 6,100 characters answers 200, from roughly 7,000 it answers 500, and past 8,300
-        /// it answers 414. A reporter hit the 500 band and saw the form throw his data away and fall back to the
-        /// blank template, which is what "the template is corrupted" turned out to mean. The budget below is the
-        /// measured 200 ceiling with room to spare; the clipboard and the saved file carry the rest.</summary>
+        /// <summary>Measured against the real endpoint: a new-issue URL up to about 6,100 characters answers 200,
+        /// from roughly 7,000 it answers 500, and past 8,300 it answers 414. This is that ceiling with room to
+        /// spare.</summary>
         const int UrlBudget = 5900;
 
         /// <summary>The handful of facts that decide whether a board can be driven, short enough to travel in a
@@ -121,6 +118,10 @@ namespace Ohman {
             return sb.ToString();
         }
 
+        /// <summary>A prefilled "New laptop support" form. The report rides along only when it fits, because
+        /// GitHub's failure past the limit is not graceful: a reporter landed in the 500 band and watched the form
+        /// throw his data away and fall back to the blank template, which is what "the template is corrupted"
+        /// turned out to mean. The clipboard and the saved file carry the report the rest of the time.</summary>
         public static string IssueUrl(Engine e, string report) {
             string model = "";
             try {
@@ -135,6 +136,9 @@ namespace Ohman {
                 + "&wrong=" + Uri.EscapeDataString(Summary(e));
             // Column padding is a quarter of the report and escapes to %20 three times over, so squeeze it for
             // the URL only. The clipboard and the file keep the aligned version, which is the readable one.
+            // Escaping never shrinks a string, so if the raw report already overflows the budget the squeezed
+            // and escaped one certainly will. Check that before building ~15 KB of throwaway strings on a click.
+            if (report == null || url.Length + report.Length > UrlBudget) return url;
             var lines = report.Replace("\r\n", "\n").Split('\n');
             var sb2 = new StringBuilder();
             foreach (string line in lines) {

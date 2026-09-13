@@ -411,7 +411,7 @@ namespace Ohman {
                         System.IO.File.WriteAllText(path, r);
                     } catch { path = ""; }
                     Dispatcher.BeginInvoke((Action)delegate {
-                        btnSupport.Text = "Copy support info";
+                        btnSupport.Text = "Report Issue";
                         bool copied = false;
                         try { Clipboard.SetText(r); copied = true; } catch { }      // the clipboard is shared; it can be busy
                         txtDiag.Text = r.TrimEnd(); txtDiag.Visibility = Visibility.Visible;

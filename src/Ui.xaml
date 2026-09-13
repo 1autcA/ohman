@@ -758,7 +758,7 @@
         <Border Grid.Row="2" Background="{StaticResource Card}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="24,16">
           <StackPanel Orientation="Horizontal">
             <TextBlock x:Name="BtnDiag" Style="{StaticResource Link}" FontSize="13" Foreground="{StaticResource SegText}" Text="Diagnostics"/>
-            <TextBlock x:Name="BtnSupport" Style="{StaticResource Link}" FontSize="13" Foreground="{StaticResource SegText}" Text="Report this laptop" Margin="22,0,0,0" ToolTip="Collects everything needed to add or fix this laptop, copies it, and opens a prefilled GitHub issue"/>
+            <TextBlock x:Name="BtnSupport" Style="{StaticResource Link}" FontSize="13" Foreground="{StaticResource SegText}" Text="Report Issue" Margin="22,0,0,0" ToolTip="Collects everything needed to add or fix this laptop, copies it, and opens a prefilled GitHub issue"/>
             <TextBlock x:Name="BtnLog" Style="{StaticResource Link}" FontSize="13" Foreground="{StaticResource SegText}" Text="Log" Margin="22,0,0,0"/>
             <TextBlock x:Name="BtnExit" Style="{StaticResource Link}" FontSize="13" Text="Exit Ohman" Margin="22,0,0,0"/>
           </StackPanel>

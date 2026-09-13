@@ -8,8 +8,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Management;
+using System.Reflection;
 using System.Text;
 using System.Threading;
+
+[assembly: AssemblyTitle("Ohman hardware probe")]
+[assembly: AssemblyDescription("Command line tool that exercises the HP hpqBIntM WMI BIOS interface.")]
 
 static class P {
     const uint CMD = 0x20008;

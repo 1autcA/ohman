@@ -17,13 +17,18 @@ using System.Windows;
 // taking over, and the window would be the wrong physical size on a display with a different scale factor.
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
+// The title is what the UAC prompt and Task Manager show, so it is the app name rather than the file name.
+// The shared publisher and version strings are in src\Meta.cs.
+[assembly: System.Reflection.AssemblyTitle("Ohman")]
+[assembly: System.Reflection.AssemblyDescription("Fan, thermal and keyboard lighting control for HP OMEN and Victus laptops.")]
+
 namespace Ohman {
     public static class Program {
         // To rename the app: change AppName here and the /out: names in build.cmd. Everything else follows
         // (window title, tray, scheduled task, single-instance names, log/state file names).
         public const string AppName = "Ohman";                 // internal id: file names, mutex, scheduled task
         public static string DisplayName = AppName;           // what the UI shows; override with Name=... in ohman.state
-        public const string Version = "1.0.4";
+        public const string Version = Meta.Version;           // bump it in src\Meta.cs, not here
         public static string FileStem { get { return AppName.ToLowerInvariant(); } }
         public static EventWaitHandle ShowEvent, ExitEvent;   // named events: another instance can ask us to show or exit
         public static bool FlashTest;                         // --flash: show the key OSD at start (preview/screenshot aid)

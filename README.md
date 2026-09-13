@@ -137,6 +137,11 @@ Ideas and issues are welcome.
 While this has been tested extensively, it is still sending commands to your laptop's firmware.
 Use at your own risk.
 
+## Declaration
+
+Claude was used for in-depth research on laptop models and their manuals so I can add extensive device support
+to Ohman.
+
 ## Licence
 
 GPL-3.0-or-later for the code. OFL 1.1 for the Font.

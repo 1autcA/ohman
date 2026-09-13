@@ -1224,7 +1224,10 @@ namespace Ohman {
                 GpuLevel g = E.EffectiveGpu;
                 string gpuName = g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base";
                 // 0 is not a chassis temperature, it is a firmware that does not implement 0x23. Saying "chassis 0" reads as a reading.
-                txtHomeStatus.Text = (E.P.HasGpuPower ? gpuName : E.CurrentTdp + " W") + (lastBiosTemp > 0 ? " · chassis " + lastBiosTemp + "°" : "");
+                // Same rule as the chassis reading: a board whose firmware never reported a base TDP has no
+                // wattage to show, and CurrentTdp there is a leftover slider offset with nothing under it.
+                txtHomeStatus.Text = (E.P.HasGpuPower ? gpuName : E.P.HasPowerGain ? E.CurrentTdp + " W" : "")
+                    + (lastBiosTemp > 0 ? " · chassis " + lastBiosTemp + "°" : "");
                 fanLinks.SetText(2, S.Fan == FanMode.Custom ? "Curve" : "Manual");
                 fanLinks.Select(S.Fan == FanMode.Auto ? 0 : S.Fan == FanMode.Max ? 1 : 2, IsVisible);
                 if (gpuSeg != null) { gpuSeg.Select(S.GpuAuto ? 3 : (int)g, IsVisible && cur == Page.Settings); txtGpuSub.Text = S.GpuAuto ? "Follows the mode" : g == GpuLevel.Max ? "Custom TGP + PPAB" : g == GpuLevel.Boost ? "PPAB" : "Base TGP"; }
@@ -1301,7 +1304,8 @@ namespace Ohman {
                     }
                     if (t >= 0 && t != lastBiosTemp) {
                         lastBiosTemp = t; GpuLevel g = E.EffectiveGpu;
-                        txtHomeStatus.Text = (E.P.HasGpuPower ? (g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base") : E.CurrentTdp + " W") + (t > 0 ? " · chassis " + t + "°" : "");
+                        txtHomeStatus.Text = (E.P.HasGpuPower ? (g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base") : E.P.HasPowerGain ? E.CurrentTdp + " W" : "")
+                            + (t > 0 ? " · chassis " + t + "°" : "");
                     }
                     reading = false;
                 });

@@ -460,6 +460,10 @@ namespace Ohman {
                         resetting = true;                    // ExitApp must delete the settings, not save them
                         string folder = "";
                         try { folder = System.IO.Path.GetDirectoryName(Log.Path); } catch { }
+                        // The reset takes a moment and the window can be sent to the tray inside it. An
+                        // unowned dialog can then open behind whatever is in front, and this one is the last
+                        // thing the app says before it exits, so make sure there is a window to own it.
+                        if (!IsVisible) { try { Show(); WindowState = WindowState.Normal; Activate(); } catch { } }
                         MessageBox.Show(IsVisible ? (Window)this : null,
                             (what.Length > 0 ? "Done:\n\n" + what + "\n" : "Done.\n\n")
                                 + Program.DisplayName + " closes now. Delete " + Program.AppName + ".exe when it does.",

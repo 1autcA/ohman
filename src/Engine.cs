@@ -445,13 +445,6 @@ namespace Ohman {
                 }
             }
         }
-        /// <summary>Leave the fans somewhere they can survive being left. We hold them by refreshing the
-        /// firmware's user-defined state; stop refreshing and the firmware keeps the last level we wrote for
-        /// about 120 s before its own curve resumes (research.md §4). Quitting at an idle level and then
-        /// starting a game would therefore leave the fans idle while the chips climb. Fallback is the level
-        /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
-        /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
-        /// <remarks>The summary above belongs to Park, further down. FactoryReset's own is next.</remarks>
         /// <summary>Put the machine back the way it was, then let the caller quit. Everything Ohman changes
         /// outside its own folder is undone here, vendor software first so the laptop has its own tools back.
         ///
@@ -499,6 +492,12 @@ namespace Ohman {
             return sb.ToString();
         }
 
+        /// <summary>Leave the fans somewhere they can survive being left. We hold them by refreshing the
+        /// firmware's user-defined state; stop refreshing and the firmware keeps the last level we wrote for
+        /// about 120 s before its own curve resumes (research.md §4). Quitting at an idle level and then
+        /// starting a game would therefore leave the fans idle while the chips climb. Fallback is the level
+        /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
+        /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
         public void Park() {
             // Give the keyboard back before anything else. To paint it at all we switch Windows Dynamic Lighting
             // off, and we were never switching it back: quitting left the keyboard frozen on the last thing we

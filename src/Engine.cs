@@ -84,6 +84,7 @@ namespace Ohman {
         public int MaxStopAfterMin = 30;            // leave max fan after this many minutes (0 = never)
         public bool ManualLinked = true;            // the two manual sliders move together
         public long UpdateChecked = 0;              // ticks of the last successful update check
+        public string CheckedFrom = "";             // the build that did that check; a different one means the cache is not ours
         public string LatestVersion = "";           // newest release tag GitHub reported
         public int WinX = -1, WinY = -1;
         public bool StartHidden = false;
@@ -157,6 +158,7 @@ namespace Ohman {
                         case "MaxStopAfterMin": if (TryInt(v, out n)) s.MaxStopAfterMin = Math.Max(0, Math.Min(240, n)); break;
                         case "ManualLinked": if (bool.TryParse(v, out b)) s.ManualLinked = b; break;
                         case "UpdateChecked": { long l; if (long.TryParse(v, out l)) s.UpdateChecked = l; break; }
+                        case "CheckedFrom": s.CheckedFrom = v; break;
                         case "LatestVersion": s.LatestVersion = v.Length > 24 ? v.Substring(0, 24) : v; break;
                         case "WinX": if (TryInt(v, out n)) s.WinX = n; break;
                         case "WinY": if (TryInt(v, out n)) s.WinY = n; break;
@@ -206,7 +208,7 @@ namespace Ohman {
                 sb.AppendLine("RefreshHz=" + RefreshHz); sb.AppendLine("LowHzOnBattery=" + LowHzOnBattery); sb.AppendLine("TrayTemp=" + TrayTemp); sb.AppendLine("KeyCommand=" + KeyCommand);
                 sb.AppendLine("Guard=" + Guard); sb.AppendLine("UpdateOnLaunch=" + UpdateOnLaunch);
                 sb.AppendLine("MaxBackWhenCool=" + MaxBackWhenCool); sb.AppendLine("MaxStopAfterMin=" + MaxStopAfterMin); sb.AppendLine("ManualLinked=" + ManualLinked);
-                sb.AppendLine("UpdateChecked=" + UpdateChecked); sb.AppendLine("LatestVersion=" + LatestVersion);
+                sb.AppendLine("UpdateChecked=" + UpdateChecked); sb.AppendLine("LatestVersion=" + LatestVersion); sb.AppendLine("CheckedFrom=" + CheckedFrom);
                 sb.AppendLine("WinX=" + WinX); sb.AppendLine("WinY=" + WinY); sb.AppendLine("StartHidden=" + StartHidden);
                 sb.AppendLine("# Name=   (optional: a different display name for the window and tray; no rebuild needed)");
                 if (!string.IsNullOrEmpty(Name)) sb.AppendLine("Name=" + Name);
@@ -276,9 +278,15 @@ namespace Ohman {
         public bool UpdateAvailable { get { return Update.Newer(S.LatestVersion, Program.Version); } }
         /// <summary>Ask GitHub for the newest release tag. force = the user pressed the button; otherwise at most once a day.</summary>
         public void CheckForUpdate(bool force) {
-            if (!force && S.UpdateChecked != 0 && (DateTime.Now - LastUpdateCheck).TotalHours < 24) return;
+            // A cached answer belongs to the build that fetched it. Version numbers do not only go up: this one
+            // went 1.2 -> 1.0 when it was renumbered for release, so a tag cached by an older build compares as
+            // newer than anything we could actually offer and the update badge never clears. If the running build
+            // is not the one that did the check, the cache is stale by definition and the day's wait is skipped.
+            bool otherBuild = S.CheckedFrom != Program.Version;
+            if (!force && !otherBuild && S.UpdateChecked != 0 && (DateTime.Now - LastUpdateCheck).TotalHours < 24) return;
             string tag = Update.LatestTag();
             S.UpdateChecked = DateTime.Now.Ticks;
+            S.CheckedFrom = Program.Version;
             if (tag != null) S.LatestVersion = tag;
             S.Save();
             if (force) Say(tag == null ? "Update check failed" : Update.Newer(tag, Program.Version) ? "Version " + tag + " is available" : "Ohman is up to date");

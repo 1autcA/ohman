@@ -44,10 +44,3 @@ body:
         From a session where you clicked every mode:
         `%LOCALAPPDATA%\Packages\AD2F1837.OMENCommandCenter_v10z8vjag6ke6\LocalCache\Local\HPOMEN\`
         Drag the newest file in here.
-  - type: checkboxes
-    id: ack
-    attributes:
-      label: Before you post
-      options:
-        - label: I understand this writes to my laptop's firmware and I accept the risk
-          required: true

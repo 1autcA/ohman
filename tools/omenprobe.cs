@@ -40,8 +40,11 @@ static class P {
         using (var intf = Intf()) {
             var cls = new ManagementClass("root\\wmi", "hpqBDataIn", null);
             var din = cls.CreateInstance();
-            din["Sign"] = SIGN; din["Command"] = CmdOverride; din["CommandType"] = type;
-            din["Size"] = (uint)data.Length; din["hpqBData"] = data;
+            din["Sign"] = SIGN;
+            din["Command"] = CmdOverride;
+            din["CommandType"] = type;
+            din["Size"] = (uint)data.Length;
+            din["hpqBData"] = data;
             string m = "hpqBIOSInt" + outSize;
             var inP = intf.GetMethodParameters(m);
             inP["InData"] = din;
@@ -58,7 +61,9 @@ static class P {
 
     static void Try(string name, uint type, byte[] data, int outSize) {
         try {
-            byte[] o; string sg; long ms;
+            byte[] o;
+            string sg;
+            long ms;
             uint rc = Call(type, data, outSize, out o, out sg, out ms);
             Console.WriteLine("{0,-28} type=0x{1:X2} in=[{2}] out{3} -> rc={4} sign={5} data=[{6}] ({7}ms)",
                 name, type, Hex(data, 8), outSize, rc, sg, Hex(o, 24), ms);

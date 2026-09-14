@@ -18,20 +18,25 @@ namespace Ohman {
         public Rgb(byte r, byte g, byte b) { R = r; G = g; B = b; }
         public string Hex { get { return R.ToString("X2") + G.ToString("X2") + B.ToString("X2"); } }
         public static bool TryParse(string s, out Rgb c) {
-            c = new Rgb(); int v;
+            c = new Rgb();
+            int v;
             if (s == null || s.Length != 6 || !int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out v)) return false;
-            c = new Rgb((byte)(v >> 16), (byte)(v >> 8), (byte)v); return true;
+            c = new Rgb((byte)(v >> 16), (byte)(v >> 8), (byte)v);
+            return true;
         }
         /// <summary>Hue 0..360 at full saturation and value.</summary>
         public static Rgb FromHue(double h) {
-            h = ((h % 360) + 360) % 360; double x = 1 - Math.Abs((h / 60) % 2 - 1);
+            h = ((h % 360) + 360) % 360;
+            double x = 1 - Math.Abs((h / 60) % 2 - 1);
             double r = 0, g = 0, b = 0;
             if (h < 60) { r = 1; g = x; } else if (h < 120) { r = x; g = 1; } else if (h < 180) { g = 1; b = x; }
             else if (h < 240) { g = x; b = 1; } else if (h < 300) { r = x; b = 1; } else { r = 1; b = x; }
             return new Rgb((byte)Math.Round(r * 255), (byte)Math.Round(g * 255), (byte)Math.Round(b * 255));
         }
         public static Rgb FromHsv(double h, double sat, double val) {
-            h = ((h % 360) + 360) % 360; sat = Math.Max(0, Math.Min(1, sat)); val = Math.Max(0, Math.Min(1, val));
+            h = ((h % 360) + 360) % 360;
+            sat = Math.Max(0, Math.Min(1, sat));
+            val = Math.Max(0, Math.Min(1, val));
             double c = val * sat, x = c * (1 - Math.Abs((h / 60) % 2 - 1)), m = val - c, r = 0, g = 0, b = 0;
             if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
             else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
@@ -39,7 +44,9 @@ namespace Ohman {
         }
         public void ToHsv(out double h, out double sat, out double val) {
             double r = R / 255.0, g = G / 255.0, b = B / 255.0, max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), d = max - min;
-            val = max; sat = max <= 0 ? 0 : d / max; h = Hue;
+            val = max;
+            sat = max <= 0 ? 0 : d / max;
+            h = Hue;
         }
         public Rgb Scale(double f) { f = Math.Max(0, Math.Min(1, f)); return new Rgb((byte)Math.Round(R * f), (byte)Math.Round(G * f), (byte)Math.Round(B * f)); }
         public double Hue {
@@ -78,7 +85,8 @@ namespace Ohman {
         public const int ON_FLAG = 0x80;
         // keyboard type byte (OGH NbKeyboardLightingType): 0 none, 1/2 four zones (with/without numpad), 3 per-key RGB, 4/5 one zone
         public readonly int KbdType;
-        readonly LightKind kind; readonly int zones;
+        readonly LightKind kind;
+        readonly int zones;
         public LightKind Kind { get { return kind; } }
         public int Zones { get { return zones; } }
         public string Describe { get { return kind == LightKind.PerKey ? "per-key" : zones == 1 ? "1 zone" : zones + " zones"; } }
@@ -106,7 +114,8 @@ namespace Ohman {
             catch (Exception ex) { Log.Write("keyboard type query: " + ex.Message + "; assuming standard layout"); }
             if (type < 0) type = 0;                        // -1 arrives as 0xFF and means the same thing as 0 here
 
-            LightKind k; int z;
+            LightKind k;
+            int z;
             // Type 3 keeps the four-zone table and the backlight byte, and neither does anything: reported by three
             // separate owners (OMEN 17-ck, board 88FE, Transcend 16) and confirmed by OmenMon's maintainer. The real
             // interface is the keyboard's own USB HID device. See docs/research.md, "Per-key keyboards".
@@ -119,7 +128,8 @@ namespace Ohman {
             // from being handed an editor: it has to actually answer. A board that answers while declaring nothing
             // plainly has lighting -- board 8574 returns rc 3 for every 0x20008 command and still answers 0x20009.
             try {
-                var c = l.GetColors(); int b = l.GetBacklight();
+                var c = l.GetColors();
+                int b = l.GetBacklight();
                 // Open question, deliberately not guessed at. Firmware with no lighting could in principle answer
                 // 0x20009/0x02 with rc 0 and a buffer of zeros, and since type 0 now means "standard layout"
                 // rather than "none", nothing would catch it. The obvious veto -- reject when the support bit is
@@ -142,14 +152,16 @@ namespace Ohman {
         byte[] Table() { var d = Bios.Call(CMD, OP_COLOR_GET, new byte[] { 0 }, 128); if (d.Length < COLOR_OFFSET + 3 * zones) throw new InvalidOperationException("short colour table (" + d.Length + " bytes)"); return d; }
 
         public Rgb[] GetColors() {
-            var d = Table(); var c = new Rgb[zones];
+            var d = Table();
+            var c = new Rgb[zones];
             for (int i = 0; i < zones; i++) c[i] = new Rgb(d[COLOR_OFFSET + 3 * i], d[COLOR_OFFSET + 3 * i + 1], d[COLOR_OFFSET + 3 * i + 2]);
             return c;
         }
 
         public void SetColors(Rgb[] c) {
             var d = Table();                                     // read-modify-write, exactly as OGH does; bytes 0..24 are left alone
-            var buf = new byte[128]; Array.Copy(d, buf, Math.Min(d.Length, 128));
+            var buf = new byte[128];
+            Array.Copy(d, buf, Math.Min(d.Length, 128));
             for (int i = 0; i < zones && i < c.Length; i++) { buf[COLOR_OFFSET + 3 * i] = c[i].R; buf[COLOR_OFFSET + 3 * i + 1] = c[i].G; buf[COLOR_OFFSET + 3 * i + 2] = c[i].B; }
             Bios.Call(CMD, OP_COLOR_SET, buf, 4);
         }

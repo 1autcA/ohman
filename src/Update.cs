@@ -33,10 +33,14 @@ namespace Ohman {
 
         /// <summary>The string value of a top-level JSON field (the response has no nested "tag_name").</summary>
         static string Field(string json, string name) {
-            int i = json.IndexOf("\"" + name + "\"", StringComparison.Ordinal); if (i < 0) return null;
-            i = json.IndexOf(':', i); if (i < 0) return null;
-            i = json.IndexOf('"', i); if (i < 0) return null;
-            int end = json.IndexOf('"', i + 1); if (end < 0) return null;
+            int i = json.IndexOf("\"" + name + "\"", StringComparison.Ordinal);
+            if (i < 0) return null;
+            i = json.IndexOf(':', i);
+            if (i < 0) return null;
+            i = json.IndexOf('"', i);
+            if (i < 0) return null;
+            int end = json.IndexOf('"', i + 1);
+            if (end < 0) return null;
             return json.Substring(i + 1, end - i - 1);
         }
 
@@ -51,7 +55,8 @@ namespace Ohman {
             return false;
         }
         static int Part(string[] parts, int i) {
-            int n; return i < parts.Length && int.TryParse(new string(Array.FindAll(parts[i].ToCharArray(), char.IsDigit)), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? n : 0;
+            int n;
+            return i < parts.Length && int.TryParse(new string(Array.FindAll(parts[i].ToCharArray(), char.IsDigit)), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? n : 0;
         }
 
         /// <summary>"3 days ago", "2 hours ago", "just now" — the design's phrasing for the last check.</summary>

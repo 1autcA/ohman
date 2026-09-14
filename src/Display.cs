@@ -36,27 +36,34 @@ namespace Ohman {
         public static int[] Rates() {
             var set = new SortedDictionary<int, bool>();
             try {
-                var cur = Fresh(); if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref cur)) return new int[0];
+                var cur = Fresh();
+                if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref cur)) return new int[0];
                 for (int i = 0; ; i++) {
-                    var d = Fresh(); if (!EnumDisplaySettings(null, i, ref d)) break;
+                    var d = Fresh();
+                    if (!EnumDisplaySettings(null, i, ref d)) break;
                     if (d.dmPelsWidth == cur.dmPelsWidth && d.dmPelsHeight == cur.dmPelsHeight && d.dmBitsPerPel == cur.dmBitsPerPel && d.dmDisplayFrequency > 1) set[d.dmDisplayFrequency] = true;
                 }
             } catch (Exception ex) { Log.Write("display modes: " + ex.Message); }
-            var r = new List<int>(set.Keys); return r.ToArray();
+            var r = new List<int>(set.Keys);
+            return r.ToArray();
         }
 
         /// <summary>The rates worth a button: 60 Hz, the highest, and the lowest at or above 48 Hz when that is neither.</summary>
         public static int[] Choices() {
-            var all = Rates(); if (all.Length < 2) return new int[0];
+            var all = Rates();
+            if (all.Length < 2) return new int[0];
             var pick = new SortedDictionary<int, bool>();
-            int max = all[all.Length - 1]; pick[max] = true;
+            int max = all[all.Length - 1];
+            pick[max] = true;
             foreach (int r in all) if (r == 60) pick[60] = true;
             foreach (int r in all) if (r >= 48) { pick[r] = true; break; }
-            var l = new List<int>(pick.Keys); return l.ToArray();
+            var l = new List<int>(pick.Keys);
+            return l.ToArray();
         }
         /// <summary>The battery rate: 60 Hz when the panel has it, else the lowest rate at or above 48 Hz, else the lowest.</summary>
         public static int BatteryHz() {
-            var all = Rates(); if (all.Length == 0) return 0;
+            var all = Rates();
+            if (all.Length == 0) return 0;
             foreach (int r in all) if (r == 60) return 60;
             foreach (int r in all) if (r >= 48) return r;
             return all[0];
@@ -70,9 +77,11 @@ namespace Ohman {
         /// <summary>Switch the primary display's refresh rate, keeping resolution and depth; persisted like the Settings app does.</summary>
         public static bool SetHz(int hz) {
             try {
-                var d = Fresh(); if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref d)) return false;
+                var d = Fresh();
+                if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref d)) return false;
                 if (d.dmDisplayFrequency == hz) return true;
-                d.dmDisplayFrequency = hz; d.dmFields = DM_DISPLAYFREQUENCY;
+                d.dmDisplayFrequency = hz;
+                d.dmFields = DM_DISPLAYFREQUENCY;
                 int rc = ChangeDisplaySettingsEx(null, ref d, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
                 Log.Write("refresh rate " + hz + " Hz -> rc " + rc);
                 return rc == DISP_CHANGE_SUCCESSFUL;
@@ -81,7 +90,8 @@ namespace Ohman {
 
         /// <summary>Put every display to sleep (what the power button's "turn off display" does); any input wakes them.</summary>
         public static void Off() {
-            const int WM_SYSCOMMAND = 0x0112, SC_MONITORPOWER = 0xF170; var HWND_BROADCAST = new IntPtr(0xFFFF);
+            const int WM_SYSCOMMAND = 0x0112, SC_MONITORPOWER = 0xF170;
+            var HWND_BROADCAST = new IntPtr(0xFFFF);
             try { SendMessage(HWND_BROADCAST, WM_SYSCOMMAND, new IntPtr(SC_MONITORPOWER), new IntPtr(2)); } catch (Exception ex) { Log.Write("display off: " + ex.Message); }
         }
     }

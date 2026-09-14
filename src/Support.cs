@@ -35,7 +35,8 @@ namespace Ohman {
             return s;
         }
         static string Replace(string hay, string needle, string with) {
-            int i; int from = 0;
+            int i;
+            int from = 0;
             while ((i = hay.IndexOf(needle, from, StringComparison.OrdinalIgnoreCase)) >= 0) {
                 hay = hay.Substring(0, i) + with + hay.Substring(i + needle.Length);
                 from = i + with.Length;
@@ -253,7 +254,8 @@ namespace Ohman {
                     PerformanceCounter pc = null;
                     try {
                         pc = new PerformanceCounter("Thermal Zone Information", "Temperature", n, true);
-                        pc.NextValue(); System.Threading.Thread.Sleep(60);
+                        pc.NextValue();
+                        System.Threading.Thread.Sleep(60);
                         double k = pc.NextValue();
                         bool usable = k >= 283 && k <= 398;
                         sb.AppendLine("  " + Scrub(n).PadRight(30) + Math.Round(k - 273.15, 1).ToString(CultureInfo.InvariantCulture).PadLeft(7)
@@ -341,7 +343,8 @@ namespace Ohman {
                                 if (at < 0) continue;
                                 string v = line.Substring(at + 10).Trim().TrimEnd(',');
                                 if (v.Length == 0 || v.Length > 40 || v.IndexOf(',') < 0 || v == "0,0,0,0" || v == "is null") continue;   // single values are not payloads
-                                if (counts.ContainsKey(v)) counts[v]++; else counts[v] = 1;
+                                if (counts.ContainsKey(v)) counts[v]++;
+                                else counts[v] = 1;
                             }
                         } catch { }
                     }

@@ -12,7 +12,10 @@ using System.Windows.Media;
 namespace Ohman {
 
     public sealed class KeyDef {
-        public string Label; public double X, Y, W, H = 1; public int Zone; public int Index;
+        public string Label;
+        public double X, Y, W, H = 1;
+        public int Zone;
+        public int Index;
         public bool OnNumpad;
         /// <summary>HID usage on the keyboard page (0x07), 0 when we have no name for this key. A LampArray
         /// reports the usage of the key each of its lamps lights, which is how a lamp finds its key here.</summary>
@@ -39,11 +42,13 @@ namespace Ohman {
                 new[] { "Shift:2.3", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "Shift:2.9" },
                 new[] { "Ctrl", "Fn", "Win", "Alt", " :6.4", "Alt", "Ctrl", "◀", "▲▼", "▶" }
             };
-            double y = 0; int idx = 0;
+            double y = 0;
+            int idx = 0;
             foreach (var row in rows) {
                 double x = 0;
                 foreach (string spec in row) {
-                    string label = spec; double w = 1;
+                    string label = spec;
+                    double w = 1;
                     int c = spec.LastIndexOf(':');
                     if (c > 0) { label = spec.Substring(0, c); w = double.Parse(spec.Substring(c + 1), CultureInfo.InvariantCulture); }
                     keys.Add(new KeyDef { Label = label.Trim(), X = x, Y = y, W = w, H = 1, Index = idx++ });
@@ -103,7 +108,8 @@ namespace Ohman {
         /// <summary>The lamp closest to a point given as a fraction of the board, in the device's own bounding box.</summary>
         static int Nearest(LampArray la, double fx, double fy) {
             double want = fx * la.WidthMicrometres, wantY = fy * la.HeightMicrometres;
-            int best = 0; double bestD = double.MaxValue;
+            int best = 0;
+            double bestD = double.MaxValue;
             for (int i = 0; i < la.LampCount; i++) {
                 double dx = la.X[i] - want, dy = la.Y[i] - wantY, d = dx * dx + dy * dy;
                 if (d < bestD) { bestD = d; best = i; }
@@ -133,7 +139,8 @@ namespace Ohman {
             if (l == "\u25B6") return 0x4F;                      // right
             if (l == "\u25B2\u25BC") return 0x52;               // one key for up and down on this shape; call it up
             if (l.Length == 0) return 0x2C;                      // the space bar is drawn with a blank label
-            ushort u; return Usages.TryGetValue(l, out u) ? u : (ushort)0;
+            ushort u;
+            return Usages.TryGetValue(l, out u) ? u : (ushort)0;
         }
     }
 
@@ -150,8 +157,10 @@ namespace Ohman {
         public readonly HashSet<int> Hover = new HashSet<int>();      // key indices in the group under the pointer
         public event Action<KeyDef> KeyClicked;
         public event Action<KeyDef> KeyHovered;                   // null when the pointer leaves the board
-        Rgb[] shown = new Rgb[0], target = new Rgb[0]; bool animating;
-        int zones = 1; double unitsW = 15.5, unitsH = 6;
+        Rgb[] shown = new Rgb[0], target = new Rgb[0];
+        bool animating;
+        int zones = 1;
+        double unitsW = 15.5, unitsH = 6;
         static Typeface face;
         static readonly Dictionary<uint, SolidColorBrush> Brushes_ = new Dictionary<uint, SolidColorBrush>();
         static readonly Color OffCap = Color.FromRgb(0x1F, 0x1C, 0x1A), OffLegend = Color.FromRgb(0x84, 0x7F, 0x7B),
@@ -167,7 +176,8 @@ namespace Ohman {
         void Tick(object o, EventArgs e) {
             bool done = true;
             for (int i = 0; i < shown.Length; i++) {
-                var a = shown[i]; var b = target[i];
+                var a = shown[i];
+                var b = target[i];
                 shown[i] = new Rgb(Ease(a.R, b.R), Ease(a.G, b.G), Ease(a.B, b.B));
                 if (shown[i].R != b.R || shown[i].G != b.G || shown[i].B != b.B) done = false;
             }
@@ -178,9 +188,13 @@ namespace Ohman {
         void StopAnim() { if (animating) { animating = false; CompositionTarget.Rendering -= Tick; } }
 
         public void SetLayout(List<KeyDef> keys) {
-            Keys = keys; unitsW = 0; unitsH = 0; zones = 1;
+            Keys = keys;
+            unitsW = 0;
+            unitsH = 0;
+            zones = 1;
             foreach (var k in keys) { unitsW = Math.Max(unitsW, k.X + k.W); unitsH = Math.Max(unitsH, k.Y + k.H); zones = Math.Max(zones, k.Zone + 1); }
-            InvalidateMeasure(); InvalidateVisual();
+            InvalidateMeasure();
+            InvalidateVisual();
         }
         public void Repaint() { InvalidateVisual(); }
 
@@ -192,10 +206,12 @@ namespace Ohman {
         Rect KeyRect(KeyDef k) { double u = Unit; return new Rect(k.X * u, k.Y * RowPitch, Math.Max(1, k.W * u - Gap), Math.Max(1, k.H * RowPitch - Gap)); }
 
         static SolidColorBrush B(Color c) {
-            uint key = (uint)(c.A << 24 | c.R << 16 | c.G << 8 | c.B); SolidColorBrush b;
+            uint key = (uint)(c.A << 24 | c.R << 16 | c.G << 8 | c.B);
+            SolidColorBrush b;
             if (Brushes_.TryGetValue(key, out b)) return b;
             if (Brushes_.Count > 2048) Brushes_.Clear();     // an effect paints a new colour every frame; the cache is a
-            b = new SolidColorBrush(c); b.Freeze();          // frame-to-frame saving, not somewhere to keep hours of them
+            b = new SolidColorBrush(c);
+            b.Freeze();          // frame-to-frame saving, not somewhere to keep hours of them
             Brushes_[key] = b;
             return b;
         }
@@ -216,8 +232,10 @@ namespace Ohman {
         Color SmoothColor(KeyDef k) {
             int n = Math.Min(zones, shown.Length);
             double t = (k.X + k.W / 2) / unitsW * n - 0.5;                       // position in zone-centre units
-            int i0 = (int)Math.Floor(t), i1 = i0 + 1; double f = t - i0;
-            i0 = Math.Max(0, Math.Min(n - 1, i0)); i1 = Math.Max(0, Math.Min(n - 1, i1));
+            int i0 = (int)Math.Floor(t), i1 = i0 + 1;
+            double f = t - i0;
+            i0 = Math.Max(0, Math.Min(n - 1, i0));
+            i1 = Math.Max(0, Math.Min(n - 1, i1));
             var order = KeyboardLayouts.DisplayOrder(n);
             int a = i0 < order.Length ? order[i0] : 0, b = i1 < order.Length ? order[i1] : 0;
             return Mix(ToColor(shown[a]), ToColor(shown[b]), f);
@@ -242,7 +260,8 @@ namespace Ohman {
                     fill = Scale(ZoneColor(k), lv);
                     legend = Luma(fill) > 0.62 ? Color.FromArgb(0x80, 0, 0, 0) : Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF);
                 } else {
-                    fill = Interactive ? OffCap : MiniOff; legend = WindowsOwned ? WinLegend : OffLegend;
+                    fill = Interactive ? OffCap : MiniOff;
+                    legend = WindowsOwned ? WinLegend : OffLegend;
                 }
                 // keys outside the group under the pointer step back rather than disappear
                 if (anyHover && !hov && !sel) { fill = Mix(Card, fill, 0.32); legend = WithA(legend, 0.45); }
@@ -266,7 +285,8 @@ namespace Ohman {
         /// the whole group flicked off and on again. A point in a gap belongs to whoever is closest. It also means
         /// there are no dead clicks: clicking a gap selects the key you were obviously aiming at.</summary>
         KeyDef Hit(Point p) {
-            KeyDef best = null; double bestD = double.MaxValue;
+            KeyDef best = null;
+            double bestD = double.MaxValue;
             foreach (var k in Keys) {
                 Rect r = KeyRect(k);
                 if (r.Contains(p)) return k;
@@ -282,17 +302,22 @@ namespace Ohman {
             if (!Interactive || !Selectable) return;
             var k = Hit(e.GetPosition(this));
             if (k == hovered) return;
-            hovered = k; Cursor = k == null ? Cursors.Arrow : Cursors.Hand;
-            var h = KeyHovered; if (h != null) h(k);
+            hovered = k;
+            Cursor = k == null ? Cursors.Arrow : Cursors.Hand;
+            var h = KeyHovered;
+            if (h != null) h(k);
         }
         protected override void OnMouseLeave(MouseEventArgs e) {
             if (!Interactive || hovered == null) return;
-            hovered = null; var h = KeyHovered; if (h != null) h(null);
+            hovered = null;
+            var h = KeyHovered;
+            if (h != null) h(null);
         }
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) {
             if (!Interactive || !Selectable) return;
             var k = Hit(e.GetPosition(this));
-            var h = KeyClicked; if (h != null) h(k);
+            var h = KeyClicked;
+            if (h != null) h(k);
         }
     }
 }

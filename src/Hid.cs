@@ -81,11 +81,13 @@ namespace Ohman {
         /// which is enough for HidD_GetAttributes and HidP_GetCaps and never disturbs whoever else has it open.</summary>
         internal static List<Info> Enumerate() {
             var found = new List<Info>();
-            Guid guid; HidD_GetHidGuid(out guid);
+            Guid guid;
+            HidD_GetHidGuid(out guid);
             IntPtr set = SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
             if (set == Invalid) return found;
             try {
-                var data = new InterfaceData(); data.Size = Marshal.SizeOf(typeof(InterfaceData));
+                var data = new InterfaceData();
+                data.Size = Marshal.SizeOf(typeof(InterfaceData));
                 for (int i = 0; SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref guid, i, ref data); i++) {
                     string path = DetailPath(set, ref data);
                     if (path == null) continue;
@@ -116,7 +118,8 @@ namespace Ohman {
             if (h == Invalid) return null;
             IntPtr pp = IntPtr.Zero;
             try {
-                var attrs = new Attributes(); attrs.Size = Marshal.SizeOf(typeof(Attributes));
+                var attrs = new Attributes();
+                attrs.Size = Marshal.SizeOf(typeof(Attributes));
                 if (!HidD_GetAttributes(h, ref attrs)) return null;
                 if (!HidD_GetPreparsedData(h, out pp)) return null;
                 var caps = new Caps();
@@ -130,7 +133,8 @@ namespace Ohman {
                 var name = new byte[254];
                 if (HidD_GetProductString(h, name, name.Length)) {
                     string s = System.Text.Encoding.Unicode.GetString(name);
-                    int nul = s.IndexOf('\0'); info.Product = nul >= 0 ? s.Substring(0, nul) : s;
+                    int nul = s.IndexOf('\0');
+                    info.Product = nul >= 0 ? s.Substring(0, nul) : s;
                 }
                 return info;
             } catch (Exception ex) { Log.Write("hid describe: " + ex.Message); return null; }
@@ -169,12 +173,20 @@ namespace Ohman {
         readonly bool[] programmable;
 
         LampArray(IntPtr h, Hid.Info info, byte[] attrs) {
-            handle = h; featureLen = info.FeatureLen; Path = info.Path; Product = info.Product;
-            VendorId = info.VendorId; ProductId = info.ProductId;
+            handle = h;
+            featureLen = info.FeatureLen;
+            Path = info.Path;
+            Product = info.Product;
+            VendorId = info.VendorId;
+            ProductId = info.ProductId;
             LampCount = U16(attrs, 1);
-            WidthMicrometres = I32(attrs, 3); HeightMicrometres = I32(attrs, 7);
-            Kind = U32(attrs, 15); MinUpdateMicroseconds = U32(attrs, 19);
-            KeyUsage = new ushort[LampCount]; X = new int[LampCount]; Y = new int[LampCount];
+            WidthMicrometres = I32(attrs, 3);
+            HeightMicrometres = I32(attrs, 7);
+            Kind = U32(attrs, 15);
+            MinUpdateMicroseconds = U32(attrs, 19);
+            KeyUsage = new ushort[LampCount];
+            X = new int[LampCount];
+            Y = new int[LampCount];
             programmable = new bool[LampCount];
             ReadLamps();
         }
@@ -192,7 +204,8 @@ namespace Ohman {
                 IntPtr h = Hid.Open(info.Path);
                 if (h == Hid.Invalid) { Log.Write("lamparray: " + info + " — cannot open"); continue; }
                 try {
-                    var attrs = new byte[info.FeatureLen]; attrs[0] = RepAttributes;
+                    var attrs = new byte[info.FeatureLen];
+                    attrs[0] = RepAttributes;
                     if (!Hid.GetFeature(h, attrs)) { Log.Write("lamparray: " + info + " — attributes report refused"); Hid.CloseHandle(h); continue; }
                     var la = new LampArray(h, info, attrs);
                     Log.Write("lamparray: " + info + " -> " + la.Describe);
@@ -231,14 +244,20 @@ namespace Ohman {
         void ReadLamps() {
             for (int i = 0; i < LampCount; i++) {
                 try {
-                    var req = new byte[featureLen]; req[0] = RepLampRequest; req[1] = (byte)i; req[2] = (byte)(i >> 8);
+                    var req = new byte[featureLen];
+                    req[0] = RepLampRequest;
+                    req[1] = (byte)i;
+                    req[2] = (byte)(i >> 8);
                     if (!Hid.SetFeature(handle, req)) continue;
-                    var rep = new byte[featureLen]; rep[0] = RepLampResponse;
+                    var rep = new byte[featureLen];
+                    rep[0] = RepLampResponse;
                     if (!Hid.GetFeature(handle, rep)) continue;
                     // Some devices answer with a lamp id of their own choosing rather than the one asked for, so the
                     // reply is filed under the id it reports, not under i.
-                    int id = U16(rep, 1); if (id < 0 || id >= LampCount) id = i;
-                    X[id] = I32(rep, 3); Y[id] = I32(rep, 7);
+                    int id = U16(rep, 1);
+                    if (id < 0 || id >= LampCount) id = i;
+                    X[id] = I32(rep, 3);
+                    Y[id] = I32(rep, 7);
                     programmable[id] = featureLen > 27 && rep[27] != 0;      // IsProgrammable
                     // InputBinding is ONE byte (HUTRR84 3.5.3), and it is the last field of the report.
                     // Reading it as a u16 took the byte after it too, which is off the end of a report that
@@ -251,7 +270,9 @@ namespace Ohman {
         /// <summary>Take the device off its own animations so what we send stays on screen.</summary>
         public void TakeOver(bool ours) {
             try {
-                var b = new byte[featureLen]; b[0] = RepControl; b[1] = (byte)(ours ? 0 : 1);   // AutonomousMode
+                var b = new byte[featureLen];
+                b[0] = RepControl;
+                b[1] = (byte)(ours ? 0 : 1);   // AutonomousMode
                 Hid.SetFeature(handle, b);
             } catch (Exception ex) { Log.Write("lamparray control: " + ex.Message); }
         }
@@ -260,10 +281,16 @@ namespace Ohman {
         public void SetAll(Rgb c, int intensity) {
             try {
                 var b = new byte[featureLen];
-                b[0] = RepRangeUpdate; b[1] = FlagUpdateComplete;
-                b[2] = 0; b[3] = 0;
-                b[4] = (byte)((LampCount - 1) & 0xFF); b[5] = (byte)((LampCount - 1) >> 8);
-                b[6] = c.R; b[7] = c.G; b[8] = c.B; b[9] = (byte)intensity;
+                b[0] = RepRangeUpdate;
+                b[1] = FlagUpdateComplete;
+                b[2] = 0;
+                b[3] = 0;
+                b[4] = (byte)((LampCount - 1) & 0xFF);
+                b[5] = (byte)((LampCount - 1) >> 8);
+                b[6] = c.R;
+                b[7] = c.G;
+                b[8] = c.B;
+                b[9] = (byte)intensity;
                 Hid.SetFeature(handle, b);
             } catch (Exception ex) { Log.Write("lamparray range update: " + ex.Message); }
         }
@@ -282,10 +309,14 @@ namespace Ohman {
                     b[2] = (byte)(at + count >= n ? FlagUpdateComplete : 0);
                     for (int j = 0; j < count; j++) {
                         int id = ids[at + j];
-                        b[3 + j * 2] = (byte)(id & 0xFF); b[4 + j * 2] = (byte)(id >> 8);
+                        b[3 + j * 2] = (byte)(id & 0xFF);
+                        b[4 + j * 2] = (byte)(id >> 8);
                         int ch = 3 + MultiUpdateLamps * 2 + j * 4;
                         var c = colors[at + j];
-                        b[ch] = c.R; b[ch + 1] = c.G; b[ch + 2] = c.B; b[ch + 3] = (byte)intensity;
+                        b[ch] = c.R;
+                        b[ch + 1] = c.G;
+                        b[ch + 2] = c.B;
+                        b[ch + 3] = (byte)intensity;
                     }
                     if (!Hid.SetFeature(handle, b)) break;
                 }
@@ -294,7 +325,8 @@ namespace Ohman {
 
         public void Dispose() {
             if (handle == Hid.Invalid) return;
-            Hid.CloseHandle(handle); handle = Hid.Invalid;
+            Hid.CloseHandle(handle);
+            handle = Hid.Invalid;
         }
     }
 
@@ -309,7 +341,8 @@ namespace Ohman {
 
         public PerKeyLighting(LampArray la) {
             lamps = la;
-            ids = new int[la.LampCount]; shown = new Rgb[la.LampCount];
+            ids = new int[la.LampCount];
+            shown = new Rgb[la.LampCount];
             // Off, not white. A LampArray cannot be read back, so whatever we put here is invented, and white is
             // the loudest possible invention: it is every lamp at full brightness. It also does not stay local --
             // ParseColors returns null when the saved string is shorter than the lamp count, which it always is
@@ -338,7 +371,8 @@ namespace Ohman {
         public int GetBacklight() { return backlight; }
         public void SetBacklight(bool on, int level) {
             backlight = Math.Max(0, Math.Min(100, level)) | (on ? 0x80 : 0);
-            if (on) Paint(); else lamps.SetAll(new Rgb(0, 0, 0), 0);
+            if (on) Paint();
+            else lamps.SetAll(new Rgb(0, 0, 0), 0);
         }
 
         void Paint() {

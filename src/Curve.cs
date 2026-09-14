@@ -15,7 +15,8 @@ namespace Ohman {
         public int[] Levels = { 18, 20, 24, 30, 38, 48, 57 };
         public int Floor = 18, Ceiling = 57, UserFloor = 0;   // UserFloor > Floor: the lowest level the curve may drive (drawn as a line)
         public bool ReadOnly;
-        public double LiveTemp = double.NaN; public int LiveLevel = -1;
+        public double LiveTemp = double.NaN;
+        public int LiveLevel = -1;
         public event Action<int[]> Changed;          // fires while dragging (the caller debounces) and on release
         int drag = -1, hover = -1;
         const double PlotH = 196, PillH = 20, LabelW = 22, LabelGap = 8, AxisGap = 10, AxisH = 14;
@@ -34,7 +35,8 @@ namespace Ohman {
 
         // the live dot breathes once every two seconds, so a still screenshot and a running app look the same but the
         // running one shows the reading is alive
-        bool pulsing; TimeSpan pulseStart;
+        bool pulsing;
+        TimeSpan pulseStart;
         void Animate(bool on) {
             if (on == pulsing) return;
             pulsing = on;
@@ -42,19 +44,23 @@ namespace Ohman {
         }
         double pulseT;
         void Pulse(object o, EventArgs e) {
-            var re = e as RenderingEventArgs; if (re == null) return;
+            var re = e as RenderingEventArgs;
+            if (re == null) return;
             if (pulseStart == TimeSpan.Zero) pulseStart = re.RenderingTime;
             double t = (re.RenderingTime - pulseStart).TotalSeconds % 2.2;
             if (LiveLevel <= 0 || double.IsNaN(LiveTemp)) return;
-            pulseT = t; InvalidateVisual();
+            pulseT = t;
+            InvalidateVisual();
         }
 
         FormattedText Text(string s, double size, Brush b) { return new FormattedText(s, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, b, 1.0); }
 
         protected override void OnRender(DrawingContext dc) {
             if (face == null) face = new Typeface(Ui.MonoFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-            Color ac = Ui.Accent.Color; var accent = Ui.Accent;
-            var gridH = new Pen(GridH, 1); var gridV = new Pen(GridV, 1);
+            Color ac = Ui.Accent.Color;
+            var accent = Ui.Accent;
+            var gridH = new Pen(GridH, 1);
+            var gridV = new Pen(GridV, 1);
             foreach (int pct in new[] { 100, 75, 50, 25, 0 }) {
                 double y = Math.Round(Y(Ceiling * pct / 100.0)) + 0.5;
                 dc.DrawLine(gridH, new Point(X0, y), new Point(X1, y));
@@ -122,7 +128,9 @@ namespace Ohman {
                         for (int i = drag + 1; i < Levels.Length; i++) if (Levels[i] < lvl) Levels[i] = lvl;     // a fan curve never falls as it gets hotter
                         for (int i = drag - 1; i >= 0; i--) if (Levels[i] > lvl) Levels[i] = lvl;
                     }
-                    InvalidateVisual(); var h = Changed; if (h != null) h((int[])Levels.Clone());
+                    InvalidateVisual();
+                    var h = Changed;
+                    if (h != null) h((int[])Levels.Clone());
                 }
                 return;
             }

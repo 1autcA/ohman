@@ -143,8 +143,11 @@ namespace Ohman {
                 ManagementObject intf = Interface();
                 using (var cls = new ManagementClass("root\\wmi", "hpqBDataIn", null))
                 using (ManagementBaseObject din = cls.CreateInstance()) {
-                    din["Sign"] = SIGN; din["Command"] = command; din["CommandType"] = commandType;
-                    din["Size"] = (uint)data.Length; din["hpqBData"] = data;
+                    din["Sign"] = SIGN;
+                    din["Command"] = command;
+                    din["CommandType"] = commandType;
+                    din["Size"] = (uint)data.Length;
+                    din["hpqBData"] = data;
                     string method = "hpqBIOSInt" + outSize.ToString(CultureInfo.InvariantCulture);
                     using (ManagementBaseObject inP = intf.GetMethodParameters(method)) {
                         inP["InData"] = din;
@@ -193,7 +196,8 @@ namespace Ohman {
             return n > 0 ? n : (asked ? 0 : -1);
         }
         public int GetFanTableMax() {
-            var d = Call(OP_FAN_TABLE_GET, Z4, 128); if (d.Length < 2) return -1;
+            var d = Call(OP_FAN_TABLE_GET, Z4, 128);
+            if (d.Length < 2) return -1;
             int n = Math.Min((int)d[1], 40), top = -1;
             for (int i = 0; i < n; i++) { int o = 2 + 3 * i; if (o + 1 >= d.Length) break; top = Math.Max(top, Math.Max(d[o], d[o + 1])); }
             return top;
@@ -219,8 +223,12 @@ namespace Ohman {
             var d = Call(OP_SYSTEM_DATA, Z4, 128);
             var s = new SystemInfo { Raw = d };
             if (d.Length >= 9) {
-                s.Valid = true; s.ThermalPolicy = d[3]; s.SwFanControl = (d[4] & 1) != 0;
-                s.DefaultPl4 = d[5]; s.DefaultConcurrentTdp = d[8]; s.GpuModes = d[7];
+                s.Valid = true;
+                s.ThermalPolicy = d[3];
+                s.SwFanControl = (d[4] & 1) != 0;
+                s.DefaultPl4 = d[5];
+                s.DefaultConcurrentTdp = d[8];
+                s.GpuModes = d[7];
             }
             return s;
         }
@@ -237,7 +245,8 @@ namespace Ohman {
             // OGH on this machine sends a 128-byte buffer with the two levels in front; mirror it exactly.
             var d = new byte[128];
             // Level 0 switches a fan off on this firmware (measured); the hardware layer refuses anything below the floor.
-            d[0] = (byte)Math.Max(AbsoluteFloor, Math.Min(255, fan1)); d[1] = (byte)Math.Max(AbsoluteFloor, Math.Min(255, fan2));
+            d[0] = (byte)Math.Max(AbsoluteFloor, Math.Min(255, fan1));
+            d[1] = (byte)Math.Max(AbsoluteFloor, Math.Min(255, fan2));
             Call(OP_FAN_LEVEL_SET, d, 0);
         }
 
@@ -264,7 +273,11 @@ namespace Ohman {
     /// <summary>Simulated hardware for UI preview / non-elevated runs.</summary>
     public sealed class DemoHardware : IHardware {
         readonly Random rnd = new Random();
-        int f1 = 27, f2 = 25, temp = 41; bool max; byte mode = 0x30; int tdp = 30; bool ppab;
+        int f1 = 27, f2 = 25, temp = 41;
+        bool max;
+        byte mode = 0x30;
+        int tdp = 30;
+        bool ppab;
         int m1 = -1, m2 = -1;
         public bool IsDemo { get { return true; } }
         public int GetFanCount() { return 2; }
@@ -273,7 +286,8 @@ namespace Ohman {
         public int[] GetFanLevels() {
             int t1 = max ? 57 : (m1 >= 0 ? m1 : (mode == 0x31 ? 36 : mode == 0x30 ? 28 : 22));
             int t2 = max ? 57 : (m2 >= 0 ? m2 : (mode == 0x31 ? 34 : mode == 0x30 ? 26 : 20));
-            f1 += Math.Sign(t1 - f1) * Math.Min(3, Math.Abs(t1 - f1)); f2 += Math.Sign(t2 - f2) * Math.Min(3, Math.Abs(t2 - f2));
+            f1 += Math.Sign(t1 - f1) * Math.Min(3, Math.Abs(t1 - f1));
+            f2 += Math.Sign(t2 - f2) * Math.Min(3, Math.Abs(t2 - f2));
             return new int[] { f1, f2 };
         }
         public int GetTemperature() { temp += rnd.Next(-1, 2); temp = Math.Max(34, Math.Min(52, temp)); return temp; }

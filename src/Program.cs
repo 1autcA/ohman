@@ -37,7 +37,8 @@ namespace Ohman {
 
         [STAThread]
         public static int Main(string[] args) {
-            bool demo = false, hidden = false, settings = false; string shot = null;
+            bool demo = false, hidden = false, settings = false;
+            string shot = null;
             var overrides = new System.Collections.Generic.List<string>();
             for (int i = 0; i < args.Length; i++) {
                 string a = args[i].ToLowerInvariant();
@@ -111,23 +112,15 @@ namespace Ohman {
         [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AllocConsole();
         [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int which);
 
-        /// <summary>Give the console-shaped switches somewhere to print, and say whether we opened it ourselves.
+        /// <summary>Give the console switches somewhere to print, and say whether the console is ours to hold open.
         ///
-        /// This is a windows-subsystem binary, so it owns no console and every Console.WriteLine goes nowhere
-        /// unless one is borrowed. AttachConsole(-1) borrows the caller's, which covers a prompt that is already
-        /// elevated. It does not cover the common case: app.manifest asks for administrator, so starting this from
-        /// an ordinary prompt spawns a fresh elevated process whose parent is no longer that console. The output
-        /// then vanished with no hint why, which is what an owner on board 8BAD saw running --lamps.
+        /// A windows-subsystem binary owns no console. AttachConsole(-1) borrows the caller's, which only works from
+        /// a prompt that is already elevated: app.manifest asks for administrator, so an ordinary prompt spawns a
+        /// fresh process whose parent is not that console, and the output went nowhere with nothing to say why.
         ///
-        /// Redirection is the case that must be left alone. support-info.cmd sends stdout to a file; AttachConsole
-        /// fails there too, but stdout is already the file, so allocating a console would steal it back and write
-        /// the report to a window nobody asked for.
-        ///
-        /// The guard has to be the standard output handle itself, not Console.IsOutputRedirected. That property
-        /// asks whether stdout is a character device, and a process with no console at all has a NULL handle whose
-        /// file type is UNKNOWN, so it answers "redirected" for the exact case this fallback exists to serve. It is
-        /// cached on first read as well. A NULL or INVALID handle means nobody is listening and a console of our
-        /// own can do no harm; anything else is a real destination and must be left alone.</summary>
+        /// The guard is the stdout handle, not Console.IsOutputRedirected, which reports "redirected" when there is
+        /// no console at all - the exact case this serves. NULL or INVALID means nobody is listening; anything else
+        /// is a real destination, support-info.cmd's file included, and must be left alone.</summary>
         static bool OpenConsole() {
             try {
                 if (AttachConsole(-1)) { PointStdOutAtConsole(); return false; }
@@ -139,7 +132,9 @@ namespace Ohman {
         }
 
         static void PointStdOutAtConsole() {
-            var w = new System.IO.StreamWriter(Console.OpenStandardOutput()); w.AutoFlush = true; Console.SetOut(w);
+            var w = new System.IO.StreamWriter(Console.OpenStandardOutput());
+            w.AutoFlush = true;
+            Console.SetOut(w);
         }
 
         /// <summary>A console we opened dies with the process and takes the output with it, so wait for a person.
@@ -165,7 +160,8 @@ namespace Ohman {
             foreach (string a in args) if (a.ToLowerInvariant() == "--demo") wantDemo = true;
             IHardware hw2 = (wantDemo || !elev) ? (IHardware)new DemoHardware() : new Bios();
             if (!elev) Console.WriteLine("NOT ELEVATED - the firmware was not asked anything. Run this from an administrator prompt.\n");
-            var s2 = Settings.Load(); s2.NoPersist = true;
+            var s2 = Settings.Load();
+            s2.NoPersist = true;
             var eng = new Engine(hw2, s2);
             try { eng.Init(false); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }   // false: describe the laptop, do not touch it
             string rep;

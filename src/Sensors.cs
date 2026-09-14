@@ -14,22 +14,27 @@ namespace Ohman {
         public double CpuTemp = double.NaN, CpuLoad = double.NaN, CpuMhz = double.NaN, CpuWatts = double.NaN;
         public DateTime GpuRead = DateTime.MinValue;      // when the GPU numbers below were actually measured
         public double GpuTemp = double.NaN, GpuLoad = double.NaN, GpuWatts = double.NaN, GpuMhz = double.NaN;
-        public bool OnBattery; public int BatteryPercent = -1;
+        public bool OnBattery;
+        public int BatteryPercent = -1;
     }
 
     public sealed class Sensors : IDisposable {
         PerformanceCounter[] thermals = new PerformanceCounter[0];
         PerformanceCounter cpuUtil, cpuFreq, cpuPerf, cpuPower;
-        string nvsmi; int nvFail;
+        string nvsmi;
+        int nvFail;
         // Asking nvidia-smi anything wakes the discrete GPU. On a hybrid laptop, asking every few seconds stops it
         // ever reaching its deepest idle state, which costs several watts and shows up as a warmer chassis and busier
         // fans. So: ask at the normal rate while the GPU is doing something, and back off hard once it goes quiet.
-        int gpuQuiet; DateTime lastNv = DateTime.MinValue;
+        int gpuQuiet;
+        DateTime lastNv = DateTime.MinValue;
         public volatile bool SkipGpu;                 // set by the UI when the machine is running on the iGPU alone
         const int GpuIdleMs = 30000, GpuStaleMs = 45000;
         readonly object sync = new object();
         SensorSnapshot last = new SensorSnapshot();
-        Thread worker; volatile bool stop; volatile int intervalMs = 2000;
+        Thread worker;
+        volatile bool stop;
+        volatile int intervalMs = 2000;
         // Sleeping in 100 ms steps to stay responsive to Stop() costs ten timer interrupts a second for the life of
         // the process, which is enough to keep the package out of its deeper idle states. One wait for the whole
         // interval costs one, and the event still ends it immediately.
@@ -41,16 +46,13 @@ namespace Ohman {
         /// <summary>Counter setup takes seconds the first time; it runs on the worker so the window is not held back.</summary>
         void InitCounters() {
             try {
-                // Machines expose several ACPI thermal zones and the order means nothing: one is as likely to
-                // be a skin sensor, or a constant, as the processor. Keep every zone that reads like a real
-                // temperature and take the hottest on each poll, because the CPU is the hottest thing in a
-                // laptop under load, and a wrong choice here blinds the fan curve and the thermal guard together.
+                // Machines expose several ACPI thermal zones and the order means nothing: one is as likely to be
+                // a skin sensor, or a constant, as the processor. Keep every zone that reads like a temperature
+                // and take the hottest on each poll; a wrong choice blinds the curve and the thermal guard alike.
                 //
-                // Choosing one zone here and keeping it was the bug behind "CPU stuck at 28 degrees", reported by
-                // two owners on unrelated boards. A zone that reports a fixed value can be the hottest one on a
-                // cold machine, and it was then held for the life of the process, so the reading never moved
-                // again. One sample cannot tell a constant from an idle CPU. The next poll can, so the choice
-                // belongs there and not here.
+                // This did NOT fix "CPU stuck at 28 degrees". Choosing a zone once was a real bug, but the owners
+                // still reporting it have exactly one zone and it reads a constant, so there is nothing here to
+                // choose between. That needs a temperature source other than the ACPI zones.
                 var cat = new PerformanceCounterCategory("Thermal Zone Information");
                 string[] inst = cat.GetInstanceNames();
                 Array.Sort(inst);
@@ -158,7 +160,8 @@ namespace Ohman {
         }
         void NoteGpuActivity(SensorSnapshot s) {
             bool busy = (!double.IsNaN(s.GpuLoad) && s.GpuLoad > 1) || (!double.IsNaN(s.GpuWatts) && s.GpuWatts >= 12);
-            if (busy) gpuQuiet = 0; else if (gpuQuiet < 100) gpuQuiet++;
+            if (busy) gpuQuiet = 0;
+            else if (gpuQuiet < 100) gpuQuiet++;
         }
         // The Energy Meter counter is an energy delta divided by the sampling window, so a short or missed window
         // reports a number the package cannot physically draw. Drop those, then average a few readings: a watt figure
@@ -194,7 +197,8 @@ namespace Ohman {
         }
 
         public void Dispose() {
-            stop = true; wake.Set();
+            stop = true;
+            wake.Set();
             try { for (int i = 0; i < thermals.Length; i++) { try { thermals[i].Dispose(); } catch { } } if (cpuUtil != null) cpuUtil.Dispose(); if (cpuFreq != null) cpuFreq.Dispose(); if (cpuPower != null) cpuPower.Dispose(); } catch { }
         }
     }

@@ -92,7 +92,8 @@ namespace Ohman {
         }
         public static void Fade(UIElement e, double to, int ms) {
             e.BeginAnimation(UIElement.OpacityProperty, null);
-            double from = e.Opacity; e.Opacity = to;
+            double from = e.Opacity;
+            e.Opacity = to;
             if (from == to) return;
             e.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(ms)) { FillBehavior = FillBehavior.Stop, EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
         }
@@ -115,14 +116,16 @@ namespace Ohman {
         /// <summary>CSS cubic-bezier(x1,y1,x2,y2) easing at progress t (0..1), Newton-solved; the M3/Fluent curves are given in this form.
         /// Only needed if you swap the spring for a curve.</summary>
         public static double Bezier(double x1, double y1, double x2, double y2, double t) {
-            if (t <= 0) return 0; if (t >= 1) return 1;
+            if (t <= 0) return 0;
+            if (t >= 1) return 1;
             double u = t;
             for (int i = 0; i < 8; i++) {
                 double x = 3 * u * (1 - u) * (1 - u) * x1 + 3 * u * u * (1 - u) * x2 + u * u * u - t;
                 double d = 3 * (1 - u) * (1 - u) * x1 + 6 * u * (1 - u) * (x2 - x1) + 3 * u * u * (1 - x2);
                 if (Math.Abs(d) < 1e-6) break;
                 u -= x / d;
-                if (u < 0) u = 0; else if (u > 1) u = 1;
+                if (u < 0) u = 0;
+                else if (u > 1) u = 1;
             }
             return 3 * u * (1 - u) * (1 - u) * y1 + 3 * u * u * (1 - u) * y2 + u * u * u;
         }
@@ -167,7 +170,8 @@ namespace Ohman {
         public Color Color { get { return (Color)GetValue(ColorProperty); } set { SetValue(ColorProperty, value); } }
         protected override Freezable CreateInstanceCore() { return new ColorSource(); }
         static void OnColor(DependencyObject d, DependencyPropertyChangedEventArgs e) {
-            var s = (ColorSource)d; var c = (Color)e.NewValue;
+            var s = (ColorSource)d;
+            var c = (Color)e.NewValue;
             s.SetValue(LightProperty, Ui.Mix(c, Colors.White, 0.26));
             s.SetValue(DarkProperty, Ui.Mix(c, Colors.Black, 0.30));
         }
@@ -180,9 +184,12 @@ namespace Ohman {
         /// solid object rather than a flat chip; everything else in the window uses the plain accent brush.</summary>
         public LinearGradientBrush MakeGradient() {
             var g = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1) };
-            var top = new GradientStop(Colors.Transparent, 0); var bottom = new GradientStop(Colors.Transparent, 1);
-            g.GradientStops.Add(top); g.GradientStops.Add(bottom);
-            Bind(top, GradientStop.ColorProperty, "Light"); Bind(bottom, GradientStop.ColorProperty, "Dark");
+            var top = new GradientStop(Colors.Transparent, 0);
+            var bottom = new GradientStop(Colors.Transparent, 1);
+            g.GradientStops.Add(top);
+            g.GradientStops.Add(bottom);
+            Bind(top, GradientStop.ColorProperty, "Light");
+            Bind(bottom, GradientStop.ColorProperty, "Dark");
             return g;
         }
         void Bind(DependencyObject o, DependencyProperty p, string path) {

@@ -196,13 +196,53 @@ namespace Ohman {
     /// by setting it. Only HP's virtual lighting device (VHF) is touched, never external LampArray peripherals.</summary>
     public static class WinLighting {
         const string Root = @"Software\Microsoft\Lighting";
-        static string[] DeviceKeys() {
+
+        /// <summary>Registry subkey names of the VHF devices that are keyboards, cached: enumerating HID is not
+        /// something Present and HasControl should do on every call.
+        ///
+        /// The subkey name is the device interface path without its \\?\ prefix, so a LampArray path maps
+        /// straight onto one.</summary>
+        static string[] keyboards;
+        static string[] Keyboards() {
+            if (keyboards != null) return keyboards;
             var r = new List<string>();
             try {
+                foreach (var la in LampArray.All()) {
+                    try {
+                        if (la.Kind == LampArray.KindKeyboard && !string.IsNullOrEmpty(la.Path))
+                            r.Add(la.Path.StartsWith(@"\\?\") ? la.Path.Substring(4) : la.Path);
+                    } finally { try { la.Dispose(); } catch { } }
+                }
+            } catch (Exception ex) { Log.Write("keyboard lighting devices: " + ex.Message); }
+            keyboards = r.ToArray();
+            return keyboards;
+        }
+
+        /// <summary>The Dynamic Lighting entries this application should take, which is the laptop keyboard and
+        /// nothing else.
+        ///
+        /// Every VHF entry used to be taken. On a machine with one that is the same thing, which is why it went
+        /// unnoticed: the Transcend's VHF device is the keyboard. An OMEN MAX 16 has more than one, and the front
+        /// light bar is among them, so taking the keyboard also took the bar away from Windows and dropped it onto
+        /// its own firmware effect. That is the shape of the light bar reports.
+        ///
+        /// Falling back to every VHF entry when no keyboard can be identified keeps the old behaviour on any
+        /// machine this cannot work out, rather than quietly letting Windows fight us for the keyboard.</summary>
+        static string[] DeviceKeys() {
+            var all = new List<string>();
+            try {
                 using (var k = Registry.CurrentUser.OpenSubKey(Root + @"\Devices"))
-                    if (k != null) foreach (string n in k.GetSubKeyNames()) if (n.IndexOf("HID_DEVICE_SYSTEM_VHF", StringComparison.OrdinalIgnoreCase) >= 0) r.Add(n);
+                    if (k != null) foreach (string n in k.GetSubKeyNames()) if (n.IndexOf("HID_DEVICE_SYSTEM_VHF", StringComparison.OrdinalIgnoreCase) >= 0) all.Add(n);
             } catch { }
-            return r.ToArray();
+            var kb = Keyboards();
+            if (kb.Length == 0 || all.Count <= 1) return all.ToArray();
+            var mine = new List<string>();
+            foreach (string n in all)
+                foreach (string k in kb)
+                    if (string.Equals(n, k, StringComparison.OrdinalIgnoreCase)) { mine.Add(n); break; }
+            if (mine.Count == 0) return all.ToArray();
+            if (mine.Count != all.Count) Log.Write("dynamic lighting: taking " + mine.Count + " of " + all.Count + " devices (the keyboard, not the rest)");
+            return mine.ToArray();
         }
         /// <summary>True when Windows has a Dynamic Lighting entry for the laptop keyboard (HP's HyperX Lighting driver present).</summary>
         public static bool Present { get { return DeviceKeys().Length > 0; } }

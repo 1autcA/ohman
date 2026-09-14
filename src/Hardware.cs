@@ -95,7 +95,9 @@ namespace Ohman {
         public const uint OP_SET_MODE      = 0x1A; // in {0xFF, mode, 0, 0}
         public const uint OP_GPU_POWER_GET = 0x21; // out4 {cTGP, PPAB, DState, PeakTemp}
         public const uint OP_GPU_POWER_SET = 0x22; // in  {cTGP, PPAB, DState, PeakTemp}
-        public const uint OP_TEMP          = 0x23; // in {1,0,0,0} out4 -> [0]=degC
+        // 0x23 takes a sensor index: 0 IR, 1 Ambient, 2 PCH, 3 VR (named in OGH's own device library).
+        // Ohman drives from 1 and called it "chassis" for a year; it is the ambient sensor.
+        public const uint OP_TEMP          = 0x23; // in {index,0,0,0} out4 -> [0]=degC
         public const uint OP_MAX_FAN_GET   = 0x26; // out4 -> [0]=1 when max
         public const uint OP_MAX_FAN_SET   = 0x27; // in {1|0}
         public const uint OP_SYSTEM_DATA   = 0x28; // out128

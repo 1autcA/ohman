@@ -621,7 +621,24 @@ namespace Ohman {
         public double GpuTemp = double.NaN, IrTemp = double.NaN;   // GpuTemp fed by the UI sensor loop; IrTemp read here
         int fanWriteFailures;
 
+        /// <summary>Whether this firmware accepts fan levels at all. System-design byte 4 bit 0 is HP's
+        /// "software fan control supported" flag, and OGH checks it before offering manual fans. Ohman parsed it,
+        /// logged it, and then wrote 0x2E regardless: on 878A, which clears the bit, that produced
+        /// "FAIL Fan curve: BIOS returned 46 for command 0x2E" once a minute forever. Linux agrees with the
+        /// firmware there - 878A is in omen_thermal_profile_boards but not hp_wmi_feature_boards, so it exposes
+        /// no pwm either. Unknown means allowed: a board that never answered 0x28 is no worse off than before.</summary>
+        public bool CanSetFanLevels { get { return !Info.Valid || Info.SwFanControl || Hw.IsDemo; } }
+        bool fanLevelsRefused;
+
         bool WriteLevels(int l1, int l2, string what) {
+            if (!CanSetFanLevels) {
+                if (!fanLevelsRefused) {
+                    fanLevelsRefused = true;
+                    Log.Write("fan levels not written: this firmware reports software fan control unsupported (0x28 byte 4 bit 0 clear). Max fan and the modes still work.");
+                    Fire(Toast, "This firmware does not take fan levels; its own curve stays in charge", true);
+                }
+                return false;
+            }
             l1 = P.Curve.Clamp(l1);
             l2 = P.Curve.Clamp(l2);
             if (Try(delegate { Hw.GetFanCount(); Hw.SetFanLevels(l1, l2); }, what)) { curLevel1 = l1; curLevel2 = l2; fanWriteFailures = 0; fanFailureShown = false; return true; }

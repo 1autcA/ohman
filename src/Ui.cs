@@ -1433,7 +1433,7 @@ namespace Ohman {
             txtFanRight.Visibility = link ? Visibility.Collapsed : Visibility.Visible;
             btnFanAction.Text = S.Fan == FanMode.Auto ? "Edit as curve" : "Reset curve";
             if (S.Fan == FanMode.Max) {
-                txtFanApplied.Text = "Loud" + (ShowChassis(lastBiosTemp) ? " · chassis " + lastBiosTemp + "°" : "");
+                txtFanApplied.Text = "Loud" + (ShowChassis(lastBiosTemp) ? " · ambient " + lastBiosTemp + "°" : "");
                 txtFanRight.Text = "Ctrl+Alt+M toggles";
             } else {
                 txtFanApplied.Text = E.GuardActive ? "Thermal guard: max fan until cool" : "Applied to " + E.ModeName;
@@ -1597,7 +1597,7 @@ namespace Ohman {
                 // Same rule as the chassis reading: a board whose firmware never reported a base TDP has no
                 // wattage to show, and CurrentTdp there is a leftover slider offset with nothing under it.
                 txtHomeStatus.Text = (E.P.HasGpuPower ? gpuName : E.P.HasPowerGain ? E.CurrentTdp + " W" : "")
-                    + (ShowChassis(lastBiosTemp) ? " · chassis " + lastBiosTemp + "°" : "");
+                    + (ShowChassis(lastBiosTemp) ? " · ambient " + lastBiosTemp + "°" : "");
                 fanLinks.SetText(2, S.Fan == FanMode.Custom ? "Curve" : "Manual");
                 fanLinks.Select(S.Fan == FanMode.Auto ? 0 : S.Fan == FanMode.Max ? 1 : 2, IsVisible);
                 if (pollSeg != null) pollSeg.Select(S.PollMs <= 500 ? 0 : S.PollMs <= 1000 ? 1 : 2, IsVisible && cur == Page.Settings);
@@ -1643,7 +1643,7 @@ namespace Ohman {
             txtFoot.Foreground = Ui.Foot;
             if (E.Hw.IsDemo && screenshotPath == null) { dotHb.Fill = Ui.Brush(Ui.Warn); txtFoot.Text = "Demo · run as administrator"; return; }
             if (!E.BiosOk) { dotHb.Fill = Ui.Brush(Ui.Danger); txtFoot.Text = "Firmware unavailable"; return; }
-            if (E.GuardActive) { dotHb.Fill = Ui.Brush(Ui.Danger); txtFoot.Foreground = Ui.Brush(Ui.Danger); txtFoot.Text = "Thermal guard · chassis " + E.GuardChassis + "°"; return; }
+            if (E.GuardActive) { dotHb.Fill = Ui.Brush(Ui.Danger); txtFoot.Foreground = Ui.Brush(Ui.Danger); txtFoot.Text = "Thermal guard · ambient " + E.GuardChassis + "°"; return; }
             double age = (DateTime.Now - E.LastHeartbeat).TotalSeconds;
             bool fresh = E.LastHeartbeat != DateTime.MinValue && age < E.S.HeartbeatSec * 2.5;
             dotHb.Fill = Ui.Brush(fresh ? Ui.Ok : Ui.Warn);
@@ -1691,7 +1691,7 @@ namespace Ohman {
                         lastBiosTemp = t;
                         GpuLevel g = E.EffectiveGpu;
                         txtHomeStatus.Text = (E.P.HasGpuPower ? (g == GpuLevel.Max ? "GPU max" : g == GpuLevel.Boost ? "GPU boost" : "GPU base") : E.P.HasPowerGain ? E.CurrentTdp + " W" : "")
-                            + (ShowChassis(t) ? " · chassis " + t + "°" : "");
+                            + (ShowChassis(t) ? " · ambient " + t + "°" : "");
                     }
                     reading = false;
                 });

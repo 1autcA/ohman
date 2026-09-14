@@ -56,6 +56,9 @@ namespace Ohman {
         /// thresholds pins the fans near the ceiling while the CPU is at 45. The thermal guard already refuses
         /// to trust this sensor until it has read cool once; the curve had no such caution.</summary>
         public bool UseChassis = true;
+        /// <summary>False when the two fans follow their own curves. The profile curves are always linked: they
+        /// describe one machine's cooling, not two independent fans. Only the user's custom curve unlinks.</summary>
+        public bool Linked = true;
         public int StepPerTick = 3;                  // OGH moves ~3 levels per update
         public int Fallback = 35;                    // level used when no temperature is available at all
 
@@ -75,9 +78,17 @@ namespace Ohman {
             int c = double.IsNaN(cpu) ? 0 : Interp(CpuTemps, CpuLevels, cpu);
             int g = double.IsNaN(gpu) ? 0 : Interp(GpuTemps, GpuLevels, gpu);
             int r = (double.IsNaN(ir) || !UseChassis) ? 0 : Interp(IrTemps, IrLevels, ir);
+            // Unlinked: fan 1 follows the CPU curve and fan 2 the GPU curve (0x2C reports them in that order).
+            // Both were previously given the maximum of the two, so drawing a separate GPU curve changed nothing
+            // and the switch appeared to do nothing at all.
+            //
+            // It takes both readings to honour. With one sensor missing there is no second curve to follow, and
+            // leaving that fan on the chassis level alone would idle it while the other chip climbs, so the
+            // linked behaviour is the safe answer there.
+            if (!Linked && !double.IsNaN(cpu) && !double.IsNaN(gpu))
+                return new int[] { Clamp(Math.Max(c, r)), Clamp(Math.Max(g, r)) };
             int lvl = silicon ? Math.Max(c, Math.Max(g, r)) : Math.Max(Fallback, r);
-            lvl = Math.Max(Floor, Math.Min(Ceiling, lvl));
-            return new int[] { lvl, lvl };
+            return new int[] { Clamp(lvl), Clamp(lvl) };
         }
 
         /// <summary>Move one step from the current level towards the target, like OGH's smoothing.</summary>

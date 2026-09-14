@@ -695,7 +695,7 @@ namespace Ohman {
             // raise the fans -- on the one board whose owner reported that exact problem, in the one mode he uses.
             return new FanCurve { CpuTemps = CurveTemps, CpuLevels = lv, GpuTemps = CurveTemps, GpuLevels = gl, IrTemps = P.Curve.IrTemps, IrLevels = P.Curve.IrLevels,
                 Floor = floor, Ceiling = P.Curve.Ceiling, StepPerTick = step, Fallback = Math.Max(floor, P.Curve.Fallback),
-                UseChassis = P.Curve.UseChassis };
+                UseChassis = P.Curve.UseChassis, Linked = S.Cur.CurveLinked };
         }
         /// <summary>The vendor curve sampled at the editor's temperatures, for the dashed reference line.</summary>
         public int[] VendorCurveAt(bool gpu) {

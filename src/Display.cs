@@ -24,11 +24,68 @@ namespace Ohman {
         [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern int ChangeDisplaySettingsEx(string deviceName, ref DEVMODE devMode, IntPtr hwnd, int flags, IntPtr lParam);
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+        // ---------- which panel is the laptop's own ----------
+        // EnumDisplaySettings(Panel(), ...) means "the current display device on the computer on which the calling
+        // thread is running" (MSDN), which is the primary display. On a docked laptop with an external monitor set
+        // primary that is the external one, so the refresh rate control read and wrote the wrong screen. Two owners
+        // reported it as Ohman "detecting the external display as internal".
+        //
+        // The connector type is what distinguishes them, and only the DisplayConfig API reports it. Everything here
+        // falls back to null on any failure, which is exactly the old behaviour, so a machine this cannot work out
+        // is no worse off than before.
+        [StructLayout(LayoutKind.Sequential)] struct LUID { public uint Low; public int High; }
+        [StructLayout(LayoutKind.Sequential)] struct PathSource { public LUID adapter; public uint id, modeIdx, statusFlags; }
+        [StructLayout(LayoutKind.Sequential)] struct PathTarget {
+            public LUID adapter; public uint id, modeIdx, outputTechnology, rotation, scaling, refreshNum, refreshDen, scanLineOrdering;
+            public int targetAvailable; public uint statusFlags;
+        }
+        [StructLayout(LayoutKind.Sequential)] struct PathInfo { public PathSource source; public PathTarget target; public uint flags; }
+        [StructLayout(LayoutKind.Sequential)] struct ModeInfo {
+            public uint infoType; public uint id; public LUID adapter;
+            // the union that follows is 48 bytes and none of it is needed here, only its size
+            public long a, b, c, d, e, f;
+        }
+        [StructLayout(LayoutKind.Sequential)] struct DeviceInfoHeader { public uint type, size; public LUID adapter; public uint id; }
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct SourceDeviceName {
+            public DeviceInfoHeader header;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string gdiDeviceName;
+        }
+        [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint numPaths, out uint numModes);
+        [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint numPaths, [Out] PathInfo[] paths, ref uint numModes, [Out] ModeInfo[] modes, IntPtr topologyId);
+        [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref SourceDeviceName req);
+        const uint QDC_ONLY_ACTIVE_PATHS = 2, GET_SOURCE_NAME = 1;   // GET_TARGET_NAME is 2 and wants a bigger struct: passing it here returns ERROR_INVALID_PARAMETER
+        // DISPLAYCONFIG_OUTPUT_TECHNOLOGY: INTERNAL, and the two embedded kinds a modern panel reports instead.
+        const uint TECH_INTERNAL = 0x80000000, TECH_DISPLAYPORT_EMBEDDED = 11, TECH_UDI_EMBEDDED = 13;
+
+        /// <summary>GDI name of the laptop's built-in panel, or null when it cannot be identified. Not cached: a
+        /// dock or an undock changes the answer, and the callers are mode changes rather than a hot path.</summary>
+        static string Panel() {
+            try {
+                uint nPaths, nModes;
+                if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, out nPaths, out nModes) != 0) return null;
+                var paths = new PathInfo[nPaths];
+                var modes = new ModeInfo[nModes];
+                if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ref nPaths, paths, ref nModes, modes, IntPtr.Zero) != 0) return null;
+                for (int i = 0; i < nPaths; i++) {
+                    uint tech = paths[i].target.outputTechnology;
+                    if (tech != TECH_INTERNAL && tech != TECH_DISPLAYPORT_EMBEDDED && tech != TECH_UDI_EMBEDDED) continue;
+                    var q = new SourceDeviceName();
+                    q.header.type = GET_SOURCE_NAME;
+                    q.header.size = (uint)Marshal.SizeOf(typeof(SourceDeviceName));
+                    q.header.adapter = paths[i].source.adapter;
+                    q.header.id = paths[i].source.id;
+                    if (DisplayConfigGetDeviceInfo(ref q) != 0) continue;
+                    if (!string.IsNullOrEmpty(q.gdiDeviceName)) return q.gdiDeviceName;
+                }
+            } catch (Exception ex) { Log.Write("internal panel: " + ex.Message); }
+            return null;
+        }
+
         static DEVMODE Fresh() { var d = new DEVMODE(); d.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE)); return d; }
 
-        /// <summary>The primary display's current refresh rate, 0 when unknown.</summary>
+        /// <summary>The built-in panel's current refresh rate, 0 when unknown.</summary>
         public static int CurrentHz() {
-            try { var d = Fresh(); if (EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref d)) return d.dmDisplayFrequency; } catch { }
+            try { var d = Fresh(); if (EnumDisplaySettings(Panel(), ENUM_CURRENT_SETTINGS, ref d)) return d.dmDisplayFrequency; } catch { }
             return 0;
         }
 
@@ -37,10 +94,10 @@ namespace Ohman {
             var set = new SortedDictionary<int, bool>();
             try {
                 var cur = Fresh();
-                if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref cur)) return new int[0];
+                if (!EnumDisplaySettings(Panel(), ENUM_CURRENT_SETTINGS, ref cur)) return new int[0];
                 for (int i = 0; ; i++) {
                     var d = Fresh();
-                    if (!EnumDisplaySettings(null, i, ref d)) break;
+                    if (!EnumDisplaySettings(Panel(), i, ref d)) break;
                     if (d.dmPelsWidth == cur.dmPelsWidth && d.dmPelsHeight == cur.dmPelsHeight && d.dmBitsPerPel == cur.dmBitsPerPel && d.dmDisplayFrequency > 1) set[d.dmDisplayFrequency] = true;
                 }
             } catch (Exception ex) { Log.Write("display modes: " + ex.Message); }
@@ -74,15 +131,15 @@ namespace Ohman {
             var all = Rates();
             return all.Length == 0 ? 0 : all[all.Length - 1];
         }
-        /// <summary>Switch the primary display's refresh rate, keeping resolution and depth; persisted like the Settings app does.</summary>
+        /// <summary>Switch the built-in panel's refresh rate, keeping resolution and depth; persisted like the Settings app does.</summary>
         public static bool SetHz(int hz) {
             try {
                 var d = Fresh();
-                if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref d)) return false;
+                if (!EnumDisplaySettings(Panel(), ENUM_CURRENT_SETTINGS, ref d)) return false;
                 if (d.dmDisplayFrequency == hz) return true;
                 d.dmDisplayFrequency = hz;
                 d.dmFields = DM_DISPLAYFREQUENCY;
-                int rc = ChangeDisplaySettingsEx(null, ref d, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
+                int rc = ChangeDisplaySettingsEx(Panel(), ref d, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
                 Log.Write("refresh rate " + hz + " Hz -> rc " + rc);
                 return rc == DISP_CHANGE_SUCCESSFUL;
             } catch (Exception ex) { Log.Write("refresh rate: " + ex.Message); return false; }

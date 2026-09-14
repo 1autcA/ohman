@@ -206,7 +206,13 @@ namespace Ohman {
                 Probe(sb, "0x2D fan levels", Bios.CMD_DEFAULT, 0x2D, z4, 128);
                 fanTable = Probe(sb, "0x2F fan table", Bios.CMD_DEFAULT, 0x2F, z4, 128);
                 Probe(sb, "0x2C fan types", Bios.CMD_DEFAULT, 0x2C, z4, 128);
-                Probe(sb, "0x23 chassis temp", Bios.CMD_DEFAULT, 0x23, new byte[] { 1, 0, 0, 0 }, 4);
+                // 0x23 takes a sensor index. OGH's own device library names four: 0 IR, 1 Ambient, 2 PCH,
+                // 3 VR. Ohman drives the curve from 1, and on a board whose ACPI zone reports a constant
+                // that is the only moving number we have - so collect all four and find out which do move.
+                Probe(sb, "0x23 temp 0 (IR)", Bios.CMD_DEFAULT, 0x23, new byte[] { 0, 0, 0, 0 }, 4);
+                Probe(sb, "0x23 temp 1 (ambient)", Bios.CMD_DEFAULT, 0x23, new byte[] { 1, 0, 0, 0 }, 4);
+                Probe(sb, "0x23 temp 2 (PCH)", Bios.CMD_DEFAULT, 0x23, new byte[] { 2, 0, 0, 0 }, 4);
+                Probe(sb, "0x23 temp 3 (VR)", Bios.CMD_DEFAULT, 0x23, new byte[] { 3, 0, 0, 0 }, 4);
                 Probe(sb, "0x21 gpu power", Bios.CMD_DEFAULT, 0x21, z4, 4);
                 Probe(sb, "0x26 max fan", Bios.CMD_DEFAULT, 0x26, z4, 4);
                 Probe(sb, "0x2B keyboard type", Bios.CMD_DEFAULT, 0x2B, z4, 4);

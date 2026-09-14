@@ -99,7 +99,8 @@ namespace Ohman {
             for (int i = 0; i < CpuLevels.Length; i++) CpuLevels[i] = (int)Math.Round(CpuLevels[i] * f);
             for (int i = 0; i < GpuLevels.Length; i++) GpuLevels[i] = (int)Math.Round(GpuLevels[i] * f);
             for (int i = 0; i < IrLevels.Length; i++) IrLevels[i] = (int)Math.Round(IrLevels[i] * f);
-            Fallback = (int)Math.Round(Fallback * f); Ceiling = newCeiling;
+            Fallback = (int)Math.Round(Fallback * f);
+            Ceiling = newCeiling;
         }
     }
 
@@ -145,9 +146,14 @@ namespace Ohman {
             bool haveInfo = info != null && info.Valid;
             int policy = PolicyVersion(board, info);
             if (policy < 0) return null;                                 // no source for the mode bytes: stay read-only
-            // "Generic" read to owners as "your laptop is not supported", when it means the opposite: the profile was
-            // built from what this firmware itself reported, rather than from a profile somebody wrote for it.
-            var p = new PlatformProfile { Name = "OMEN/Victus " + board + " (from its own firmware)", Boards = new[] { board }, Verified = Reported(board), ThermalPolicy = policy };
+            // "Generic" read to owners as "your laptop is not supported", when it means the opposite: the profile
+            // was built from what this firmware itself reported. An owner whose board is on the verified list was
+            // shown those same words, which is worse again, so the name says which of the two it is.
+            bool known = Reported(board);
+            var p = new PlatformProfile {
+                Name = "OMEN/Victus " + board + (known ? " (verified by its owner)" : " (from its own firmware)"),
+                Boards = new[] { board }, Verified = known, ThermalPolicy = policy
+            };
             p.Curve = FanCurve.Transcend14();
             p.Curve.UseChassis = false;     // thresholds measured on one chassis; see FanCurve.UseChassis
             if (Families.In(Families.Victus, board)) { p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03; p.Notes = "Victus family (hp-wmi victus_thermal_profile_boards)"; }
@@ -191,7 +197,7 @@ namespace Ohman {
         /// which marks it Verified and stops asking the next owner to be the first to try it. Verified only ever
         /// widens the thermal guard — it lets the chassis sensor arm a trigger before the sensor has read cool
         /// once, and makes release stricter — so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
-        static readonly string[] OwnerReported = { "8748", "8EEC", "8DCF", "88D2", "88EE", "8BAB" };
+        static readonly string[] OwnerReported = { "8748", "8EEC", "8DCF", "88D2", "88EE", "8BAB", "8A26" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }
 
         public static string BoardOverride;         // --board: test aid

@@ -22,6 +22,7 @@ did what it says. Its settings are then fixed rather than worked out at run time
 | OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
 | OMEN 15z-en100 (2021) | `88D2` | 2026-09-13 | Owner confirmed it works. Listed in `hp-wmi`, driven with the mode bytes for its firmware generation. |
 | OMEN 16-wf0xxx (2023) | `8BAB` | 2026-09-14 | Full checklist run by an owner: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the keyboard all confirmed, and the fans returned to normal after exiting. A second owner on a 16-wf0120TX (i5-13500HX + RTX 4050, BIOS F.29) confirmed fans and lighting independently, with OMEN Gaming Hub and Light Studio both uninstalled. |
+| Victus 16-d1xxx | `8A26` | 2026-09-14 | Core i7-12700H + RTX 3050, BIOS F.22. Owner ran it as a full OMEN Gaming Hub replacement and confirmed fan control, the custom curve and the modes all work with OGH uninstalled. Reports thermal policy v0, so Eco and Balanced send the same byte and only Performance differs. |
 | Victus 16-e0xxx | `88EE` | 2026-09-13 | Owner confirmed it works. Not in `hp-wmi`; driven from the firmware's own answers. |
 | Victus 15-fa2405TX | `8DCF` | 2026-09-13 | Owner confirmed modes, fans and the keyboard backlight all work, with no HP software installed. Driven from the firmware's own answers. |
 | HyperX OMEN 15-gb0xxx (2026) | `8EEC` | 2026-09-13 | Ryzen 5 240 + RTX 5050, BIOS F.15. Max fan, manual, curve, auto, power gain, GPU power, graphics and four-zone lighting all confirmed by the owner. Reports **thermal policy v0**, so Eco and Balanced send the same byte and only Performance differs — see below. Base TDP 45 W, OMEN key 29/8613. |
@@ -66,7 +67,7 @@ are written down:
 
 | Model | Board ids | Mode bytes |
 |---|---|---|
-| Victus 16 (2021–2023) | `88F8`, `8A25`, `8A26` | from `hp-wmi` |
+| Victus 16 (2021–2023) | `88F8`, `8A25` | from `hp-wmi` |
 | Victus 15-fb0xxx | `8A3D` | from `hp-wmi`, no quiet mode |
 | Victus 16 S / R (2023–2024) | `8B2F`, `8BBE`, `8BD4`, `8BD5`, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
 | Victus 15, other models | `88D9`, `88DA`, `8A3E`, `8C2F`, `8C30`, `8C3F`, `8D07`, `8DCD`, `8E5E` | from the firmware |

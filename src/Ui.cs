@@ -198,7 +198,7 @@ namespace Ohman {
             SourceInitialized += OnSourceInit;
             Loaded += OnLoaded;
             Closing += delegate(object o, System.ComponentModel.CancelEventArgs ce) { if (!exiting) { ce.Cancel = true; HideToTray(); } };
-            Application.Current.SessionEnding += delegate { ExitApp(); };        // logoff/shutdown: leave cleanly instead of hiding
+            Application.Current.SessionEnding += delegate { goingDown = true; ExitApp(); };   // logoff/shutdown: leave cleanly, and quietly
             StateChanged += delegate { if (WindowState == WindowState.Minimized) { WindowState = WindowState.Normal; HideToTray(); } };
             IsVisibleChanged += delegate { PollRate(); if (IsVisible) ReadHardwareAsync(); };
             LocationChanged += delegate { if (IsVisible && WindowState == WindowState.Normal && Left > -30000 && !morphing) { E.S.WinX = (int)Left; E.S.WinY = (int)Top; } };
@@ -1887,7 +1887,7 @@ namespace Ohman {
             }) { IsBackground = true, Name = "show-listener" };
             t.Start();
         }
-        bool resetting;
+        bool resetting, goingDown;
         void ExitApp() {
             if (exiting) return;
             exiting = true;
@@ -1898,7 +1898,7 @@ namespace Ohman {
             try { if (tray != null) { tray.Visible = false; tray.Dispose(); } } catch { }
             try { if (osd != null) osd.Close(); } catch { }
             try { if (trayTempIcon != null) { IntPtr h = trayTempIcon.Handle; trayTempIcon.Dispose(); DestroyIcon(h); } } catch { }
-            try { E.Park(); } catch { }        // before Dispose: the timers must still be alive to write
+            try { E.Park(goingDown); } catch { }   // before Dispose: the timers must still be alive to write
             try { E.Dispose(); } catch { }
             try { sensors.Dispose(); } catch { }
             Log.Write("exit");

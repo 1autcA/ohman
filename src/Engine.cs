@@ -548,7 +548,12 @@ namespace Ohman {
         /// starting a game would therefore leave the fans idle while the chips climb. Fallback is the level
         /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
         /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
-        public void Park() {
+        public void Park() { Park(false); }
+        /// <param name="machineGoingDown">Windows is logging off or restarting. The level we leave behind is
+        /// replayed by the firmware for about two minutes, which on a restart is most of the next boot: an owner
+        /// who quit at idle got Fallback back at the login screen and read it as the fans maxing out. Going down,
+        /// the handover we are covering for does not exist, so leave the level where the curve already had it.</param>
+        public void Park(bool machineGoingDown) {
             // Give the keyboard back before anything else. To paint it at all we switch Windows Dynamic Lighting
             // off, and we were never switching it back: quitting left the keyboard frozen on the last thing we
             // wrote, with Windows told to keep out of it. One owner uninstalled Ohman, rebooted, and still had
@@ -572,7 +577,7 @@ namespace Ohman {
                 // The level is still written high on purpose. The firmware replays the last pair for about two
                 // minutes before its own curve resumes, and that is the handover: a hot machine keeps its cooling
                 // across it rather than dropping to a middling level the moment we quit.
-                int want = Math.Max(P.Curve.Fallback, Math.Max(curLevel1, curLevel2));
+                int want = Math.Max(machineGoingDown ? 0 : P.Curve.Fallback, Math.Max(curLevel1, curLevel2));
                 lock (applySync) WriteLevels(want, want, "Fan level on exit");
                 Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }

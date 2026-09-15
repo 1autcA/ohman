@@ -106,7 +106,7 @@ namespace Ohman {
             i = json.IndexOf(':', i);
             if (i < 0) return null;
             int j = i + 1;
-            while (j < json.Length && json[j] == ' ') j++;
+            while (j < json.Length && (json[j] == ' ' || json[j] == '\t' || json[j] == '\r' || json[j] == '\n')) j++;
             int s = j;
             while (j < json.Length && char.IsDigit(json[j])) j++;
             return j > s ? json.Substring(s, j - s) : null;
@@ -201,7 +201,13 @@ namespace Ohman {
                 // requireAdministrator manifest costs no second UAC prompt, and the shell's attachment check -
                 // the thing that raises SmartScreen - never runs. The file carries no mark of the web either;
                 // that is stamped by browsers, not by writing a file.
-                Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false, WorkingDirectory = Dir });
+                Process child = Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = false, WorkingDirectory = Dir });
+                // Starting is not running. A build that cannot load - blocked at image load, or simply broken -
+                // can come back from CreateProcess and be gone a moment later, and the catch below would never
+                // see it. There is no race to lose by waiting: the child spends its first seconds parked on the
+                // single-instance mutex waiting for this process, so it is alive unless something killed it.
+                if (child != null && child.WaitForExit(2000))
+                    throw new Exception("the new build exited immediately (code " + child.ExitCode + ")");
                 Log.Write("update: replaced " + Path.GetFileName(exe) + ", started the new build");
                 return true;
             } catch (Exception ex) {

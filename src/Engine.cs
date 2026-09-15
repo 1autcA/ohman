@@ -349,9 +349,14 @@ namespace Ohman {
             // Fetch it now rather than when the owner asks. This runs on a background thread already, and the
             // point of doing it here is that "restart to update" is offered only once there is something on disk
             // to restart into: a button that begins a download after it is pressed can fail after the promise.
-            if (rel != null && Staged == null && Update.Stage(rel)) { RefreshStaged(); Changed(); }
+            // Compare against what is already staged, not merely whether something is. Testing for presence meant
+            // that once 1.0.6 was waiting, 1.0.7 was never fetched and the row went on offering the older build.
+            // Gated on the switch as well: it promises a background download, so turning it off has to stop one,
+            // and a forced check from an owner who opted out should still only tell them.
+            string have = Staged ?? Program.Version;
+            if (rel != null && S.UpdateOnLaunch && Update.Newer(rel.Tag, have) && Update.Stage(rel)) { RefreshStaged(); Changed(); }
         }
-        string staged;
+        volatile string staged;
         /// <summary>The version downloaded and waiting to go in, or null. Read from the field: the UI asks on
         /// every refresh and the answer costs a file open.</summary>
         public string Staged { get { return staged; } }
@@ -590,7 +595,13 @@ namespace Ohman {
                 // The level is still written high on purpose. The firmware replays the last pair for about two
                 // minutes before its own curve resumes, and that is the handover: a hot machine keeps its cooling
                 // across it rather than dropping to a middling level the moment we quit.
-                int want = Math.Max(quiet ? 0 : P.Curve.Fallback, Math.Max(curLevel1, curLevel2));
+                // curLevel is -1 until a level has actually been written, and in Max fan mode nothing ever writes
+                // one, so quiet + -1 used to come out as Math.Max(0, -1) = 0: a machine that was on max fan
+                // because it was hot, restarted, and left with its fans stopped for the two minutes the EC
+                // replays the last pair. Quiet only means "do not raise a level we know"; not knowing one is
+                // exactly the case Fallback exists for.
+                int cur = Math.Max(curLevel1, curLevel2);
+                int want = quiet && cur > 0 ? cur : Math.Max(P.Curve.Fallback, cur);
                 lock (applySync) WriteLevels(want, want, "Fan level on exit");
                 Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }
@@ -671,8 +682,12 @@ namespace Ohman {
 
         bool WriteLevels(int l1, int l2, string what) {
             if (fanLevelsRefused) return false;
-            l1 = P.Curve.Clamp(l1);
-            l2 = P.Curve.Clamp(l2);
+            // ClampOrOff, not Clamp. Clamp floors at the profile's own Floor, which is 18 on every profile we
+            // ship, so it turned every 0 back into 18 on the way out - the last step of the path, after the
+            // editor, the sliders and the settings had all been taught to carry one. The whole of "let the fans
+            // stop" was inert and the only place it showed was the fans not stopping.
+            l1 = P.Curve.ClampOrOff(l1);
+            l2 = P.Curve.ClampOrOff(l2);
             if (Try(delegate { Hw.GetFanCount(); Hw.SetFanLevels(l1, l2); }, what)) { curLevel1 = l1; curLevel2 = l2; fanWriteFailures = 0; fanFailureShown = false; return true; }
             fanWriteFailures++;
             if (fanWriteFailures >= FanWriteGiveUp) {

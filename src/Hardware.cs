@@ -324,7 +324,10 @@ namespace Ohman {
         }
         public void SetMode(byte m, bool byBios) { mode = m; }
         public void SetMaxFan(bool on) { max = on; }
-        public void SetFanLevels(int a, int b) { m1 = a > 0 ? a : -1; m2 = b > 0 ? b : -1; }
+        // 0 is a level, not the absence of one: the firmware stops the fan on it and owners can now ask for it.
+        // Treating it as "no override" here made the simulated machine ignore the one setting hardest to check
+        // on a real one, so a preview of a stopped fan showed it spinning at the mode's own speed.
+        public void SetFanLevels(int a, int b) { m1 = a >= 0 ? a : -1; m2 = b >= 0 ? b : -1; }
         public void SetConcurrentTdp(int w) { tdp = w; }
         public void SetGpuPower(bool c, bool p, int t) { ppab = p; }
         int gpuMode = 0;

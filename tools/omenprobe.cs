@@ -147,7 +147,11 @@ static class P {
             // does, 128 byte buffer and all, and reads it straight back.
             if (a[0] == "fan" && a.Length >= 2) {
                 byte[] z4 = { 0, 0, 0, 0 };
-                int lvl = int.Parse(a[1], CultureInfo.InvariantCulture);
+                int lvl;
+                if (!int.TryParse(a[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out lvl) || lvl < 0 || lvl > 255) {
+                    Console.WriteLine("usage: omenprobe fan <level 0-255>");
+                    return 2;
+                }
                 var buf = new byte[128];
                 buf[0] = (byte)lvl;
                 buf[1] = (byte)lvl;

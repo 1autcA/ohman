@@ -106,6 +106,7 @@ namespace Ohman {
         Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg;
         TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
         Border updateRow;
+        string updateTitleFor = "?";        // staged version the title was last built for ("" = none); "?" = not built yet
         StackPanel updateText;
         NavBtn navUpdate;
         FrameworkElement keyCmdRow, gfxRow, hzRow, lowHzRow, gpuRow;
@@ -1592,12 +1593,18 @@ namespace Ohman {
             // free for Changelog, and nothing has to wrap.
             // Accent only on the words that are the action. "to update" is what it is for, not part of the press,
             // and colouring it too made the whole heading read as one long link.
-            txtUpdateTitle.Inlines.Clear();
-            if (staged != null) {
-                txtUpdateTitle.Inlines.Add(new Run("Restart " + Program.DisplayName) { Foreground = accent });
-                txtUpdateTitle.Inlines.Add(new Run(" to update") { Foreground = Ui.TextB });
-            } else txtUpdateTitle.Inlines.Add(new Run("Check for updates") { Foreground = Ui.TextB });
-            updateText.Cursor = staged != null ? Cursors.Hand : null;
+            // Only when it actually changes. This runs on the refresh tick, and tearing the inline collection down
+            // and building two Runs every time is a layout invalidation a second for a heading that changes twice
+            // in the life of the process.
+            if (updateTitleFor != (staged ?? "")) {
+                updateTitleFor = staged ?? "";
+                txtUpdateTitle.Inlines.Clear();
+                if (staged != null) {
+                    txtUpdateTitle.Inlines.Add(new Run("Restart " + Program.DisplayName) { Foreground = accent });
+                    txtUpdateTitle.Inlines.Add(new Run(" to update") { Foreground = Ui.TextB });
+                } else txtUpdateTitle.Inlines.Add(new Run("Check for updates") { Foreground = Ui.TextB });
+                updateText.Cursor = staged != null ? Cursors.Hand : null;
+            }
             txtUpdate.Text = staged != null
                 ? Program.Version + " → " + staged
                 : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
@@ -1606,8 +1613,16 @@ namespace Ohman {
             txtUpdate.Foreground = (staged == null && newer) ? (Brush)accent : Ui.Desc;
             btnUpdate.Text = staged != null ? "Changelog" : newer ? "Download" : "Check now";
             if (navUpdate != null) {
-                navUpdate.Visibility = staged != null ? Visibility.Visible : Visibility.Collapsed;
-                navUpdate.ToolTip = staged == null ? "Update available" : "Update to " + staged + " is ready";
+                var want = staged != null ? Visibility.Visible : Visibility.Collapsed;
+                if (navUpdate.Visibility != want) {
+                    navUpdate.Visibility = want;
+                    navUpdate.ToolTip = staged == null ? "Update available" : "Update to " + staged + " is ready";
+                    // The button sits above Settings, so showing it moves the gear down by its own height. The
+                    // rail pill is placed from the selected button's position and is only replaced on navigation
+                    // or a rail resize, neither of which happens here, so it would sit detached until the owner
+                    // clicked something else.
+                    Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate { PlaceRailPill(true); });
+                }
             }
         }
         /// <summary>The rail button and the Settings link both end here. The row is near the bottom of a page that

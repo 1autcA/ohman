@@ -93,6 +93,7 @@ namespace Ohman {
 
         /// <summary>Move one step from the current level towards the target, like OGH's smoothing.</summary>
         public int Step(int current, int target) {
+            if (target <= 0) return 0;                          // off is a destination, not a level to ramp towards
             if (current < Floor) return Math.Max(Floor, Math.Min(target, Floor + StepPerTick * 2));   // coming from off/unknown: get to the floor quickly
             int d = target - current;
             if (Math.Abs(d) <= StepPerTick) return target;

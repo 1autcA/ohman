@@ -726,7 +726,7 @@ namespace Ohman {
             var lv = S.Cur.CurveLevels;
             var gl = S.Cur.CurveLinked ? lv : S.Cur.GpuCurveLevels;
             // the floor slider raises the lowest level the curve may drive; the ramp is how many levels a 5 s tick may move (5 s per step = the vendor's 3)
-            int floor = Math.Max(P.Curve.Floor, Math.Min(P.Curve.Ceiling, S.Cur.CurveFloor));
+            int floor = Math.Max(0, Math.Min(P.Curve.Ceiling, S.Cur.CurveFloor));
             int step = Math.Max(1, Math.Min(P.Curve.Ceiling, (int)Math.Round(P.Curve.StepPerTick * 5.0 / Math.Max(1, S.Cur.CurveRamp))));
             // UseChassis has to come across too. It is false on a board nobody has measured, and leaving it to
             // the field default meant Custom mode quietly went back to letting an uncalibrated chassis sensor

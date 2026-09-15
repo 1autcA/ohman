@@ -385,7 +385,7 @@ namespace Ohman {
         /// <summary>Every slider's range comes from the profile, and must be set before anything is wired to it:
         /// changing Maximum coerces Value, which raises ValueChanged, which would look like the user moving it.</summary>
         void Bounds() {
-            slFan1.Minimum = slFan2.Minimum = E.P.Curve.Floor;
+            slFan1.Minimum = slFan2.Minimum = 0;
             slFan1.Maximum = slFan2.Maximum = E.P.Curve.Ceiling;
             slFloor.Minimum = E.P.Curve.Floor;
             slFloor.Maximum = E.P.Curve.Floor + (E.P.Curve.Ceiling - E.P.Curve.Floor) * 2 / 3;

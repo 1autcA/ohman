@@ -1718,6 +1718,10 @@ namespace Ohman {
         }
 
         void OnPowerMode(object o, Microsoft.Win32.PowerModeChangedEventArgs e) {
+            // The app has no WM_DEVICECHANGE hook, and these two are the only notice it gets that the machine it
+            // woke up on is not the machine it went to sleep on: a dock or an undock arrives as one or the other.
+            // Cheap to be wrong here (one HID enumeration on next use), expensive to be stale (see Forget).
+            WinLighting.Forget();
             if (e.Mode == Microsoft.Win32.PowerModes.Resume) E.OnResume();
             else if (e.Mode == Microsoft.Win32.PowerModes.StatusChange) {
                 bool bat = false;

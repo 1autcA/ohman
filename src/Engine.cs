@@ -553,12 +553,19 @@ namespace Ohman {
                 }
             } catch (Exception ex) { Log.Write("release lighting: " + ex.Message); }
             if (!BiosOk || Hw.IsDemo || ReadOnly) return;
-            if (GuardActive || S.Fan == FanMode.Max) return;            // already at maximum: leave it there
             try {
+                // Max fan is a flag the firmware holds until something clears it, and once we have exited nothing
+                // will. This used to return early when Max was on or the guard was engaged - "already at maximum,
+                // leave it there" - which on the way out means leaving it there for good. Two owners reported the
+                // fans running flat out until they rebooted or slept the machine, one after using Max, one after
+                // the guard fired. Whatever we were doing, the fans go back to the firmware before we go.
+                MaxFan(false, "Max fan off on exit");
+                // The level is still written high on purpose. The firmware replays the last pair for about two
+                // minutes before its own curve resumes, and that is the handover: a hot machine keeps its cooling
+                // across it rather than dropping to a middling level the moment we quit.
                 int want = Math.Max(P.Curve.Fallback, Math.Max(curLevel1, curLevel2));
-                if (want <= curLevel1 && want <= curLevel2) return;      // already at or above it
                 lock (applySync) WriteLevels(want, want, "Fan level on exit");
-                Log.Write("parked fans at " + want + " for the ~120 s the firmware holds the last level");
+                Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }
         }
 
@@ -621,29 +628,34 @@ namespace Ohman {
         public double GpuTemp = double.NaN, IrTemp = double.NaN;   // GpuTemp fed by the UI sensor loop; IrTemp read here
         int fanWriteFailures;
 
-        /// <summary>Whether this firmware accepts fan levels at all. System-design byte 4 bit 0 is HP's
-        /// "software fan control supported" flag, and OGH checks it before offering manual fans. Ohman parsed it,
-        /// logged it, and then wrote 0x2E regardless: on 878A, which clears the bit, that produced
-        /// "FAIL Fan curve: BIOS returned 46 for command 0x2E" once a minute forever. Linux agrees with the
-        /// firmware there - 878A is in omen_thermal_profile_boards but not hp_wmi_feature_boards, so it exposes
-        /// no pwm either. Unknown means allowed: a board that never answered 0x28 is no worse off than before.</summary>
-        public bool CanSetFanLevels { get { return !Info.Valid || Info.SwFanControl || Hw.IsDemo; } }
+        /// <summary>Whether this firmware still takes fan levels. Driven by what it does, not by what it says.
+        ///
+        /// HP's "software fan control supported" flag - system-design byte 4 bit 0 - looked like the answer for
+        /// 878A, which clears it and refuses 0x2E with rc 46 once a minute forever. It is not the answer: 8A26
+        /// clears the same bit and takes fan levels perfectly, on a board whose owner verified it as a full OGH
+        /// replacement. Identical byte, opposite behaviour, so the claim does not predict anything and gating on
+        /// it would have broken working fan control.
+        ///
+        /// So count the refusals instead and stop asking once the firmware has made itself clear. Max fan and the
+        /// performance modes go through their own commands and are unaffected.</summary>
+        public bool CanSetFanLevels { get { return !fanLevelsRefused; } }
+        const int FanWriteGiveUp = 8;
         bool fanLevelsRefused;
 
         bool WriteLevels(int l1, int l2, string what) {
-            if (!CanSetFanLevels) {
-                if (!fanLevelsRefused) {
-                    fanLevelsRefused = true;
-                    Log.Write("fan levels not written: this firmware reports software fan control unsupported (0x28 byte 4 bit 0 clear). Max fan and the modes still work.");
-                    Fire(Toast, "This firmware does not take fan levels; its own curve stays in charge", true);
-                }
-                return false;
-            }
+            if (fanLevelsRefused) return false;
             l1 = P.Curve.Clamp(l1);
             l2 = P.Curve.Clamp(l2);
             if (Try(delegate { Hw.GetFanCount(); Hw.SetFanLevels(l1, l2); }, what)) { curLevel1 = l1; curLevel2 = l2; fanWriteFailures = 0; fanFailureShown = false; return true; }
             fanWriteFailures++;
-            if (fanWriteFailures >= 3 && !fanFailureShown) { fanFailureShown = true; Fire(Toast, "Fan writes failing; firmware curve will take over", true); }
+            if (fanWriteFailures >= FanWriteGiveUp) {
+                fanLevelsRefused = true;
+                Log.Write("giving up on fan levels after " + fanWriteFailures + " refusals; this firmware will not take them. Max fan and the modes are unaffected.");
+                Fire(Toast, "This firmware will not take fan levels; its own curve stays in charge", true);
+            } else if (fanWriteFailures >= 3 && !fanFailureShown) {
+                fanFailureShown = true;
+                Fire(Toast, "Fan writes failing; firmware curve will take over", true);
+            }
             return false;
         }
         bool fanFailureShown;

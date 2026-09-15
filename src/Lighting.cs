@@ -197,10 +197,10 @@ namespace Ohman {
     public static class WinLighting {
         const string Root = @"Software\Microsoft\Lighting";
 
-        /// <summary>Registry subkey names of the VHF devices that are keyboards, cached: enumerating HID is not
-        /// something Present and HasControl should do on every call.
+        /// <summary>Device interface paths of the LampArray devices that are keyboards, cached: enumerating HID opens
+        /// every lighting device and is not something HasControl should do on every call.
         ///
-        /// The subkey name is the device interface path without its \\?\ prefix, so a LampArray path maps
+        /// The registry subkey name is the device interface path without its \\?\ prefix, so a LampArray path maps
         /// straight onto one.</summary>
         static string[] keyboards;
         static string[] Keyboards() {
@@ -218,6 +218,25 @@ namespace Ohman {
             return keyboards;
         }
 
+        /// <summary>Drop the cached HID enumeration. The device set is not fixed for the life of the process and
+        /// Ohman sits in the tray for days: a dock, an undock or an external RGB keyboard being plugged in changes
+        /// it, and the failure is silent — we do not take a keyboard that has appeared and Windows repaints it
+        /// against us with nothing to say why. There is no WM_DEVICECHANGE hook in the app, so this hangs off the
+        /// power-mode events, which is where a dock or a resume already shows up.</summary>
+        public static void Forget() { keyboards = null; }
+
+        /// <summary>Every Dynamic Lighting entry Windows holds for a VHF device, unfiltered. Registry only: this is
+        /// all Present needs, and Present is read while building the keyboard page, where a HID enumeration would
+        /// run inline on the UI thread.</summary>
+        static List<string> AllVhfKeys() {
+            var all = new List<string>();
+            try {
+                using (var k = Registry.CurrentUser.OpenSubKey(Root + @"\Devices"))
+                    if (k != null) foreach (string n in k.GetSubKeyNames()) if (n.IndexOf("HID_DEVICE_SYSTEM_VHF", StringComparison.OrdinalIgnoreCase) >= 0) all.Add(n);
+            } catch { }
+            return all;
+        }
+
         /// <summary>The Dynamic Lighting entries this application should take, which is the laptop keyboard and
         /// nothing else.
         ///
@@ -229,11 +248,7 @@ namespace Ohman {
         /// Falling back to every VHF entry when no keyboard can be identified keeps the old behaviour on any
         /// machine this cannot work out, rather than quietly letting Windows fight us for the keyboard.</summary>
         static string[] DeviceKeys() {
-            var all = new List<string>();
-            try {
-                using (var k = Registry.CurrentUser.OpenSubKey(Root + @"\Devices"))
-                    if (k != null) foreach (string n in k.GetSubKeyNames()) if (n.IndexOf("HID_DEVICE_SYSTEM_VHF", StringComparison.OrdinalIgnoreCase) >= 0) all.Add(n);
-            } catch { }
+            var all = AllVhfKeys();
             var kb = Keyboards();
             if (kb.Length == 0 || all.Count <= 1) return all.ToArray();
             var mine = new List<string>();
@@ -244,8 +259,9 @@ namespace Ohman {
             if (mine.Count != all.Count) Log.Write("dynamic lighting: taking " + mine.Count + " of " + all.Count + " devices (the keyboard, not the rest)");
             return mine.ToArray();
         }
-        /// <summary>True when Windows has a Dynamic Lighting entry for the laptop keyboard (HP's HyperX Lighting driver present).</summary>
-        public static bool Present { get { return DeviceKeys().Length > 0; } }
+        /// <summary>True when Windows has a Dynamic Lighting entry for a VHF device (HP's HyperX Lighting driver
+        /// present). Deliberately unfiltered: which entry is the keyboard only matters when we go to take one.</summary>
+        public static bool Present { get { return AllVhfKeys().Count > 0; } }
         public static bool HasControl {
             get {
                 try {

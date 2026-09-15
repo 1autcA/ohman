@@ -57,8 +57,9 @@ namespace Ohman {
         // DISPLAYCONFIG_OUTPUT_TECHNOLOGY: INTERNAL, and the two embedded kinds a modern panel reports instead.
         const uint TECH_INTERNAL = 0x80000000, TECH_DISPLAYPORT_EMBEDDED = 11, TECH_UDI_EMBEDDED = 13;
 
-        /// <summary>GDI name of the laptop's built-in panel, or null when it cannot be identified. Not cached: a
-        /// dock or an undock changes the answer, and the callers are mode changes rather than a hot path.</summary>
+        /// <summary>GDI name of the laptop's built-in panel, or null when it cannot be identified. Not cached across
+        /// calls: a dock or an undock changes the answer. Each public method below resolves it once into a local
+        /// instead, because this is four Win32 calls and two allocations and it must not sit inside a loop.</summary>
         static string Panel() {
             try {
                 uint nPaths, nModes;
@@ -85,7 +86,7 @@ namespace Ohman {
 
         /// <summary>The built-in panel's current refresh rate, 0 when unknown.</summary>
         public static int CurrentHz() {
-            try { var d = Fresh(); if (EnumDisplaySettings(Panel(), ENUM_CURRENT_SETTINGS, ref d)) return d.dmDisplayFrequency; } catch { }
+            try { string p = Panel(); var d = Fresh(); if (EnumDisplaySettings(p, ENUM_CURRENT_SETTINGS, ref d)) return d.dmDisplayFrequency; } catch { }
             return 0;
         }
 
@@ -93,11 +94,12 @@ namespace Ohman {
         public static int[] Rates() {
             var set = new SortedDictionary<int, bool>();
             try {
+                string p = Panel();                            // hoisted: the loop runs once per display mode, 30-100 times on a laptop panel
                 var cur = Fresh();
-                if (!EnumDisplaySettings(Panel(), ENUM_CURRENT_SETTINGS, ref cur)) return new int[0];
+                if (!EnumDisplaySettings(p, ENUM_CURRENT_SETTINGS, ref cur)) return new int[0];
                 for (int i = 0; ; i++) {
                     var d = Fresh();
-                    if (!EnumDisplaySettings(Panel(), i, ref d)) break;
+                    if (!EnumDisplaySettings(p, i, ref d)) break;
                     if (d.dmPelsWidth == cur.dmPelsWidth && d.dmPelsHeight == cur.dmPelsHeight && d.dmBitsPerPel == cur.dmBitsPerPel && d.dmDisplayFrequency > 1) set[d.dmDisplayFrequency] = true;
                 }
             } catch (Exception ex) { Log.Write("display modes: " + ex.Message); }
@@ -134,12 +136,13 @@ namespace Ohman {
         /// <summary>Switch the built-in panel's refresh rate, keeping resolution and depth; persisted like the Settings app does.</summary>
         public static bool SetHz(int hz) {
             try {
+                string p = Panel();                            // the same panel has to be read and written, so resolve it once
                 var d = Fresh();
-                if (!EnumDisplaySettings(Panel(), ENUM_CURRENT_SETTINGS, ref d)) return false;
+                if (!EnumDisplaySettings(p, ENUM_CURRENT_SETTINGS, ref d)) return false;
                 if (d.dmDisplayFrequency == hz) return true;
                 d.dmDisplayFrequency = hz;
                 d.dmFields = DM_DISPLAYFREQUENCY;
-                int rc = ChangeDisplaySettingsEx(Panel(), ref d, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
+                int rc = ChangeDisplaySettingsEx(p, ref d, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
                 Log.Write("refresh rate " + hz + " Hz -> rc " + rc);
                 return rc == DISP_CHANGE_SUCCESSFUL;
             } catch (Exception ex) { Log.Write("refresh rate: " + ex.Message); return false; }

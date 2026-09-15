@@ -249,7 +249,9 @@ namespace Ohman {
         // What stays refused is 1..17. Nothing writes those deliberately, and a fan asked for a speed it cannot
         // hold is worse than one told to stop: it is off, but nothing above knows it is.
         public const int AbsoluteFloor = 18;
-        static int Level(int v) { return v <= 0 ? 0 : Math.Max(AbsoluteFloor, Math.Min(255, v)); }
+        // Exactly 0 is off. Anything negative is a sentinel that escaped from somewhere above, and the safe
+        // reading of "I do not know" is the floor, never stopped.
+        static int Level(int v) { return v == 0 ? 0 : Math.Max(AbsoluteFloor, Math.Min(255, v)); }
         public void SetFanLevels(int fan1, int fan2) {
             // OGH on this machine sends a 128-byte buffer with the two levels in front; mirror it exactly.
             var d = new byte[128];

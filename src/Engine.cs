@@ -601,7 +601,7 @@ namespace Ohman {
                 // replays the last pair. Quiet only means "do not raise a level we know"; not knowing one is
                 // exactly the case Fallback exists for.
                 int cur = Math.Max(curLevel1, curLevel2);
-                int want = quiet && cur > 0 ? cur : Math.Max(P.Curve.Fallback, cur);
+                int want = quiet && cur >= 0 ? cur : Math.Max(P.Curve.Fallback, cur);
                 lock (applySync) WriteLevels(want, want, "Fan level on exit");
                 Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }

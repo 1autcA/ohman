@@ -103,7 +103,9 @@ namespace Ohman {
         public int Clamp(int level) { return Math.Max(Floor, Math.Min(Ceiling, level)); }
         /// <summary>Clamp, except that off stays off. The floor is the lowest speed a fan will hold, so 1..17
         /// still comes up to it, but 0 is a level the owner is allowed to ask for and HP's own tables use.</summary>
-        public int ClampOrOff(int level) { return level <= 0 ? 0 : Clamp(level); }
+        /// Exactly 0, not "0 or less". -1 is this engine's "we have not written a level yet" sentinel and it
+        /// travels: treating it as off would stop the fans on the strength of a value that means nothing is known.
+        public int ClampOrOff(int level) { return level == 0 ? 0 : Clamp(level); }
         /// <summary>OGH's own curve for the Transcend 14, read out of its profiles.json. Every unverified OMEN
         /// inherits it and rescales it to whatever its own fan table tops out at, which is the best guess available.</summary>
         public static FanCurve Transcend14() { return new FanCurve(); }

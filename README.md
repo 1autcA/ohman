@@ -57,8 +57,9 @@ accordingly. Controls your firmware does not offer are hidden rather than broken
 OMEN 15, 16 and 17 &middot; OMEN MAX 16 &middot; OMEN Transcend 14 and 16 &middot; Victus 15 and 16, including
 the S and R.
 
-Note: so far Ohman has been verified end to end on one machine, an HP OMEN Transcend 14 (2024, board 8C58).
-Every model and its board ids are in [docs/laptops.md](docs/laptops.md).
+Note: Ohman was built and checked byte for byte against OMEN Gaming Hub on one machine, an HP OMEN
+Transcend 14 (2024, board 8C58). Owners have since run the checklist on their own boards and confirmed
+them; every model and its board ids are in [docs/laptops.md](docs/laptops.md).
 
 > ### Get yours verified
 > Five minutes: run [the checklist](docs/laptops.md#verifying-your-laptop) and `tools\support-info.cmd`, then

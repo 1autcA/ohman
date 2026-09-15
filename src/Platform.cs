@@ -170,6 +170,13 @@ namespace Ohman {
             p.Curve.UseChassis = false;     // thresholds measured on one chassis; see FanCurve.UseChassis
             if (Families.In(Families.Victus, board)) { p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03; p.Notes = "Victus family (hp-wmi victus_thermal_profile_boards)"; }
             else if (Families.In(Families.VictusS, board)) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x00; p.Notes = "Victus S family"; }
+            // A Victus the kernel has not listed still speaks Victus. 0x03 is HP_VICTUS_THERMAL_PROFILE_QUIET in
+            // hp-wmi.c, and OGH sends 255,3,0,0 on a Victus 15 (8DCD) that is in no kernel table. Without this a
+            // generic v0 Victus gets Eco 0x00, the same byte as Balanced, so its quiet mode does nothing at all.
+            else if (policy == 0 && ReadModel().IndexOf("Victus", StringComparison.OrdinalIgnoreCase) >= 0) {
+                p.ModeEco = 0x03; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x03;
+                p.Notes = "thermal policy v0, Victus quiet byte";
+            }
             else if (policy == 0) { p.ModeEco = 0x00; p.ModeBalanced = 0x00; p.ModePerformance = 0x01; p.ModeCool = 0x02; p.Notes = "thermal policy v0"; }
             else if (policy == 1) {
                 // 0x50 (Cool) is documented only for the boards the kernel lists. Anywhere else, leave the
@@ -236,9 +243,10 @@ namespace Ohman {
             foreach (var p in Known) foreach (var b in p.Boards) if (string.Equals(b, board, StringComparison.OrdinalIgnoreCase)) { Floor(p); return p; }
             return null;
         }
-        /// <summary>No profile may drive a fan below the lowest level any HP firmware has been measured to keep spinning.</summary>
+        /// <summary>Keep a profile's own curve off the 1..17 band, which is a speed no fan holds. 0 is left alone: it
+        /// is off, which is a thing HP's own tables ask for.</summary>
         public static PlatformProfile Floor(PlatformProfile p) {
-            if (p != null && p.Curve != null && p.Curve.Floor < Bios.AbsoluteFloor) p.Curve.Floor = Bios.AbsoluteFloor;
+            if (p != null && p.Curve != null && p.Curve.Floor > 0 && p.Curve.Floor < Bios.AbsoluteFloor) p.Curve.Floor = Bios.AbsoluteFloor;
             return p;
         }
     }

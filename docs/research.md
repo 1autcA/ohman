@@ -81,8 +81,8 @@ Consequences:
 
 ### What Ohman does with this
 
-Every mode drives the fans explicitly: Auto steps OGH's own curve for this model every 5 s (floor 1800 rpm,
-ceiling 5700) with the `0x10` query in front of every write, Manual holds the slider levels (floor 1800), Max
+Every mode drives the fans explicitly: Auto steps OGH's own curve for this model every 5 s (ceiling 5700 rpm,
+and 0 allowed, since HP's own tables use it) with the `0x10` query in front of every write, Manual holds the slider levels, Max
 holds the max-fan flag. The hardware layer refuses any level below 18. A thermal guard forces max fan at
 CPU ≥ 90 °C, chassis ≥ 56 °C, or stalled fans while warm. Unknown boards are read-only, and the `0x10`
 query is never sent without a fan write behind it.

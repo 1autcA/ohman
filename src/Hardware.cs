@@ -238,10 +238,8 @@ namespace Ohman {
         // Decompiled from OGH PerformanceControlHelper.SetFanMode: {0xFF, mode, Convert.ToByte(fanControlByBios), 0}
         public void SetMode(byte mode, bool fanControlByBios) { Call(OP_SET_MODE, new byte[] { 0xFF, mode, (byte)(fanControlByBios ? 1 : 0), 0 }, 0); }
 
-        public void SetMaxFan(bool on) { Call(OP_MAX_FAN_SET, new byte[] { (byte)(on ? 1 : 0) }, 0); }
 
-        // The lowest level any HP firmware has been measured to keep a fan actually spinning. This is a floor under
-        // the profiles, not the model's own floor: PlatformProfile.Curve.Floor is that, and may be higher.
+        public void SetMaxFan(bool on) { Call(OP_MAX_FAN_SET, new byte[] { (byte)(on ? 1 : 0) }, 0); }
         // 18 was described here as the lowest level any HP firmware keeps a fan spinning. It is not: it is the
         // lower bound of OGH's custom-curve editor, and OGH's own default tables for these machines start at 0.
         // The Transcend 14's is [0, 23, 25, 27, ...]; an OMEN Transcend 14 (2025) runs its fans off entirely

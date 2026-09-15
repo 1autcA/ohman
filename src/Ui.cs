@@ -659,7 +659,7 @@ namespace Ohman {
                 string ask = "Undo everything " + Program.DisplayName + " changed, then quit?\n\n"
                     + "It re-enables OMEN Gaming Hub's tasks, gives the keyboard back to Windows, puts the refresh rate back, "
                     + "sets the mode to balanced, hands the fans back to the firmware, turns the backlight on, and deletes its "
-                    + "own settings and log.\n\n"
+                    + "own settings, log and Start menu entry.\n\n"
                     + "The graphics mode is left as you set it, because changing that needs a restart.\n\n"
                     + "Afterwards you can delete " + Program.AppName + ".exe and nothing of it is left behind.";
                 if (MessageBox.Show(IsVisible ? (Window)this : null, ask, Program.DisplayName,
@@ -670,6 +670,7 @@ namespace Ohman {
                     try { what = E.FactoryReset(); } catch (Exception ex) { Log.Write("factory reset: " + ex.Message); }
                     Dispatcher.BeginInvoke((Action)delegate {
                         try { SetAutostart(false); } catch (Exception ex) { Log.Write("reset autostart: " + ex.Message); }
+                        try { Shortcut.Remove(); } catch (Exception ex) { Log.Write("reset start menu: " + ex.Message); }
                         resetting = true;                    // ExitApp must delete the settings, not save them
                         string folder = "";
                         try { folder = System.IO.Path.GetDirectoryName(Log.Path); } catch { }
@@ -1896,6 +1897,10 @@ namespace Ohman {
             else if (page == "settings") Navigate(Page.Settings, false);
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             Morph(false);
+            // Off the startup path and off the UI thread: it is a COM object and a file write, and nothing is
+            // waiting on it. Never from the simulated build — that exe lives in preview\ and would point the
+            // owner's Start menu at a copy that does not touch their hardware.
+            if (!E.Hw.IsDemo && screenshotPath == null) Slow(Shortcut.Ensure);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);
             if (screenshotPath == null) return;

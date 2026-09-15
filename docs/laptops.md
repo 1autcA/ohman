@@ -22,6 +22,8 @@ did what it says. Its settings are then fixed rather than worked out at run time
 | OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
 | OMEN 15z-en100 (2021) | `88D2` | 2026-09-13 | Owner confirmed it works. Listed in `hp-wmi`, driven with the mode bytes for its firmware generation. |
 | OMEN 16-wf0xxx (2023) | `8BAB` | 2026-09-14 | Full checklist run by an owner: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the keyboard all confirmed, and the fans returned to normal after exiting. A second owner on a 16-wf0120TX (i5-13500HX + RTX 4050, BIOS F.29) confirmed fans and lighting independently, with OMEN Gaming Hub and Light Studio both uninstalled. |
+| OMEN 17-db1xxx | `8E10` | 2026-09-16 | Ryzen AI 7 350, BIOS F.20. Owner ran the checklist: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the fans returning after exit. The keyboard is white only, so the colour rows have nothing to change. |
+| Victus 16-r0xxx | `8BBE` | 2026-09-16 | Core i5-13500H, BIOS F.31. Owner filed a report with nothing wrong on it. |
 | OMEN 16-xd0xxx | `8BCD` | 2026-09-15 | Ryzen 7 7840HS + Radeon 780M, BIOS F.31. Owner ran the checklist: modes, max fan, manual, curve, power gain, GPU power, graphics switching, the four-zone keyboard and all four effects, and the fans returned to normal after exiting. |
 | OMEN 17-ck2013nl | `8BAD` | 2026-09-15 | Owner confirmed modes, max fan, manual, curve, auto, GPU power and that the fans return after exiting. The keyboard lighting does not work on this machine and is still open. A timed thermal profile board in `hp-wmi`, so the fans respond to a mode change even where the power limits may not. |
 | OMEN 15 / 17 | `8787` | 2026-09-15 | Owner confirmed the controls work. |
@@ -42,7 +44,7 @@ reuses a board across several SKUs.
 
 | Model | Board ids |
 |---|---|
-| OMEN Transcend 16 (2023–2025) | `8BB3`, `8C3B`, `8C4D`, `8E10` |
+| OMEN Transcend 16 (2023–2025) | `8BB3`, `8C3B`, `8C4D` |
 
 ### OMEN 16 and OMEN MAX
 
@@ -72,7 +74,7 @@ are written down:
 |---|---|---|
 | Victus 16 (2021–2023) | `88F8`, `8A25` | from `hp-wmi` |
 | Victus 15-fb0xxx | `8A3D` | from `hp-wmi`, no quiet mode |
-| Victus 16 S / R (2023–2024) | `8B2F`, `8BBE`, `8BD4`, `8BD5`, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
+| Victus 16 S / R (2023–2024) | `8B2F`, `8BD4`, `8BD5`, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
 | Victus 15, other models | `88D9`, `88DA`, `8A3E`, `8C2F`, `8C30`, `8C3F`, `8D07`, `8DCD`, `8E5E` | from the firmware |
 
 "from the firmware" is the same path every unlisted OMEN takes: Ohman asks the board which firmware generation

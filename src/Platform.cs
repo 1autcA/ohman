@@ -210,7 +210,7 @@ namespace Ohman {
         /// widens the thermal guard — it lets the chassis sensor arm a trigger before the sensor has read cool
         /// once, and makes release stricter — so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
         static readonly string[] OwnerReported = { "8748", "8EEC", "8DCF", "88D2", "88EE", "8BAB", "8A26",
-                                                   "8BCD", "8BAD", "8787" };
+                                                   "8BCD", "8BAD", "8787", "8E10", "8BBE" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }
 
         public static string BoardOverride;         // --board: test aid

@@ -104,9 +104,9 @@ namespace Ohman {
         bool hexTyping;
         // settings
         Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg;
-        TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnNotes, btnDiag, btnLog, btnExit;
+        TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
         Border updateRow;
-        StackPanel updateLinks;
+        StackPanel updateText;
         NavBtn navUpdate;
         FrameworkElement keyCmdRow, gfxRow, hzRow, lowHzRow, gpuRow;
         TextBox txtKeyCmd;
@@ -363,10 +363,10 @@ namespace Ohman {
             txtKeyCmdHint = F<TextBlock>("TxtKeyCmdHint");
             txtUpdate = F<TextBlock>("TxtUpdate");
             btnUpdate = F<TextBlock>("BtnUpdate");
-            btnNotes = F<TextBlock>("BtnNotes");
+
             txtUpdateTitle = F<TextBlock>("TxtUpdateTitle");
             updateRow = F<Border>("UpdateRow");
-            updateLinks = F<StackPanel>("UpdateLinks");
+            updateText = F<StackPanel>("UpdateText");
             btnDiag = F<TextBlock>("BtnDiag");
             btnSupport = F<TextBlock>("BtnSupport");
             btnReset = F<TextBlock>("BtnReset");
@@ -605,12 +605,13 @@ namespace Ohman {
             });
             OnSwitch(tgUpdateAuto, delegate(bool on) { Bg(delegate { E.SetUpdateOnLaunch(on); }); });
 
+            // The right-hand link is whatever is left to say: the changelog once the title is doing the
+            // installing, the release page while there is only news of a build, and the check itself otherwise.
             btnUpdate.MouseLeftButtonUp += delegate {
-                if (E.Staged != null) { DoUpdate(); return; }
-                if (E.UpdateAvailable) { OpenReleases(); return; }
+                if (E.Staged != null || E.UpdateAvailable) { OpenReleases(); return; }
                 txtUpdate.Text = "checking…"; Slow(delegate { E.CheckForUpdate(true); });
             };
-            btnNotes.MouseLeftButtonUp += delegate { OpenReleases(); };
+            updateText.MouseLeftButtonUp += delegate { if (E.Staged != null) DoUpdate(); };
             btnDiag.MouseLeftButtonUp += delegate {
                 if (txtDiag.Visibility == Visibility.Visible) { txtDiag.Visibility = Visibility.Collapsed; return; }
                 txtDiag.Text = "running…";
@@ -1586,19 +1587,17 @@ namespace Ohman {
             bool newer = E.UpdateAvailable;
             // Three states, and the difference that matters is whether the new build is already on disk. Only
             // then is restarting a promise we can keep, so only then does the row offer it.
-            txtUpdateTitle.Text = staged != null ? "Update ready" : "Check for updates";
+            // The title is the button once there is a build to install. It names what restarts, which a laptop
+            // utility has to, and it does it in the space a heading takes anyway - so the right of the row is
+            // free for Changelog, and nothing has to wrap.
+            txtUpdateTitle.Text = staged != null ? "Restart " + Program.DisplayName + " to update" : "Check for updates";
+            txtUpdateTitle.Foreground = staged != null ? (Brush)accent : Ui.TextB;
+            updateText.Cursor = staged != null ? Cursors.Hand : null;
             txtUpdate.Text = staged != null
                 ? Program.Version + " → " + staged
                 : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
             txtUpdate.Foreground = (staged != null || newer) ? (Brush)accent : Ui.Desc;
-            btnUpdate.Text = staged != null ? "Update (restarts " + Program.DisplayName + ")" : newer ? "Download" : "Check now";
-            btnNotes.Visibility = (staged != null || newer) ? Visibility.Visible : Visibility.Collapsed;
-            // Beside the title normally, underneath once "Update (restarts Ohman)" joins Changelog: the two of
-            // them and the switch leave the title about 25 px, which clipped it to "Update ı".
-            bool stacked = staged != null;
-            Grid.SetRow(updateLinks, stacked ? 1 : 0);
-            Grid.SetColumn(updateLinks, stacked ? 0 : 1);
-            updateLinks.Margin = new Thickness(0, stacked ? 10 : 0, 18, 0);
+            btnUpdate.Text = staged != null ? "Changelog" : newer ? "Download" : "Check now";
             if (navUpdate != null) {
                 navUpdate.Visibility = staged != null ? Visibility.Visible : Visibility.Collapsed;
                 navUpdate.ToolTip = staged == null ? "Update available" : "Update to " + staged + " is ready";

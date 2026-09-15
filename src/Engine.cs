@@ -745,7 +745,7 @@ namespace Ohman {
         public void SetCurve(int[] levels, bool gpu) {
             if (levels == null || levels.Length != CurveTemps.Length) return;
             var lv = new int[levels.Length];
-            for (int i = 0; i < lv.Length; i++) lv[i] = P.Curve.Clamp(levels[i]);
+            for (int i = 0; i < lv.Length; i++) lv[i] = P.Curve.ClampOrOff(levels[i]);
             if (gpu) S.Cur.GpuCurveLevels = lv;
             else S.Cur.CurveLevels = lv;
             S.Save();
@@ -825,8 +825,8 @@ namespace Ohman {
             if (mode == FanMode.Max && S.Fan != FanMode.Max) { maxSince = DateTime.MinValue; fanBeforeMax = S.Fan; }   // saved with S below
             NoteFanMode(mode);
             S.Fan = mode;
-            S.Fan1 = P.Curve.Clamp(f1);
-            S.Fan2 = P.Curve.Clamp(f2);
+            S.Fan1 = P.Curve.ClampOrOff(f1);
+            S.Fan2 = P.Curve.ClampOrOff(f2);
             S.Save();
             if (GuardActive && mode != FanMode.Max) { Say("Thermal guard is holding max fan; " + Choice.Fan[Choice.Of(mode)] + " resumes when cool"); Changed(); return; }
             lock (applySync) { ApplyFanCore(); lastFanWrite = DateTime.Now; }

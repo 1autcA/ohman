@@ -7,6 +7,7 @@
 //   Ohman.exe --demo --board 8A25   simulate another board id (shows the generic profile the engine would build)
 //   Ohman.exe --screenshot f.png [--settings]   render the window to a PNG and exit (UI preview)
 //   Ohman.exe --lamps        list the HID lighting devices this machine has and exit (read-only; support data)
+//   Ohman.exe --updated      started by the build it replaced: waits for that one to let go, then cleans it up
 using System;
 using System.Security.Principal;
 using System.Threading;
@@ -31,6 +32,7 @@ namespace Ohman {
         public const string Version = Meta.Version;           // bump it in src\Meta.cs, not here
         public static string FileStem { get { return AppName.ToLowerInvariant(); } }
         public static EventWaitHandle ShowEvent, ExitEvent;   // named events: another instance can ask us to show or exit
+        public static bool JustUpdated;                       // --updated: this build was started by the one it replaced
         public static bool FlashTest;                         // --flash: show the key OSD at start (preview/screenshot aid)
         public static bool KeyboardTest;                      // --keyboard: open the keyboard page at start (screenshot aid)
         public static string StartPage = "";                  // --page home|fans|keyboard|settings
@@ -60,14 +62,27 @@ namespace Ohman {
                 if (args[i].ToLowerInvariant() == "--make-ico") { MainWindow.WriteIco(args[i + 1], Ui.BalColor); return 0; }   // build aid: writes the app icon
             bool wantExit = false;
             foreach (string a0 in args) if (a0.ToLowerInvariant() == "--exit") wantExit = true;   // Ohman.exe --exit: stop the running instance (used when updating)
+            foreach (string a0 in args) if (a0.ToLowerInvariant() == "--updated") JustUpdated = true;   // started by the build we replaced
             bool created;
             if (shot != null) demo = true;                                         // screenshots never touch firmware and may run beside a live instance
             // a simulated instance is its own app: it can sit next to the real one, and --exit aimed at one never stops the other
             string instance = AppName + (demo ? "_Demo" : "");
             var mutex = new Mutex(true, instance + "_SingleInstance", out created);
             if (!created && shot == null) {
-                try { EventWaitHandle.OpenExisting(instance + (wantExit ? "_Exit" : "_ShowPanel")).Set(); } catch { }
-                return 0;
+                // We are the build that has just replaced the one still shutting down, and it holds the mutex
+                // until its process actually ends. Wait for it instead of reading it as the owner starting Ohman
+                // twice, which would show the old window and quit - the update would look like the app closing.
+                // A mutex whose owner exits without releasing it is "abandoned", which throws here and means we
+                // got it.
+                if (JustUpdated) {
+                    try { created = mutex.WaitOne(15000); }
+                    catch (AbandonedMutexException) { created = true; }
+                    catch { }
+                }
+                if (!created) {
+                    try { EventWaitHandle.OpenExisting(instance + (wantExit ? "_Exit" : "_ShowPanel")).Set(); } catch { }
+                    return 0;
+                }
             }
             if (wantExit) return 0;
             try { ShowEvent = new EventWaitHandle(false, EventResetMode.AutoReset, instance + "_ShowPanel"); } catch { }
@@ -77,6 +92,9 @@ namespace Ohman {
             try { elevated = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } catch { }
             IHardware hw = (demo || !elevated) ? (IHardware)new DemoHardware() : new Bios();
             Log.Write("---- " + AppName + " " + Version + " start · elevated=" + elevated + " · hardware=" + (hw.IsDemo ? "demo" : "bios") + (hidden ? " · hidden" : ""));
+            // The build we replaced is still on disk under its own name until its process lets go of it, which is
+            // why this waits on a thread of its own rather than holding up the window.
+            if (JustUpdated) new Thread(Update.CleanOld) { IsBackground = true, Name = "update-cleanup" }.Start();
 
             var settingsObj = Settings.Load();
             foreach (string o in overrides) { int eq = o.IndexOf('='); if (eq > 0) settingsObj.Apply(o.Substring(0, eq), o.Substring(eq + 1)); }

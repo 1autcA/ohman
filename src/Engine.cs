@@ -337,7 +337,8 @@ namespace Ohman {
             // is not the one that did the check, the cache is stale by definition and the day's wait is skipped.
             bool otherBuild = S.CheckedFrom != Program.Version;
             if (!force && !otherBuild && S.UpdateChecked != 0 && (DateTime.Now - LastUpdateCheck).TotalHours < 24) return;
-            string tag = Update.LatestTag();
+            Release rel = Update.Latest();
+            string tag = rel == null ? null : rel.Tag;
             S.UpdateChecked = DateTime.Now.Ticks;
             // Only a check that actually reached GitHub may claim the cache for this build. Stamping it on a
             // failed fetch spends the new-build recheck on nothing and leaves a stale tag for another day.
@@ -345,7 +346,18 @@ namespace Ohman {
             S.Save();
             if (force) Say(tag == null ? "Update check failed" : Update.Newer(tag, Program.Version) ? "Version " + tag + " is available" : "Ohman is up to date");
             Changed();
+            // Fetch it now rather than when the owner asks. This runs on a background thread already, and the
+            // point of doing it here is that "restart to update" is offered only once there is something on disk
+            // to restart into: a button that begins a download after it is pressed can fail after the promise.
+            if (rel != null && Staged == null && Update.Stage(rel)) { RefreshStaged(); Changed(); }
         }
+        string staged;
+        /// <summary>The version downloaded and waiting to go in, or null. Read from the field: the UI asks on
+        /// every refresh and the answer costs a file open.</summary>
+        public string Staged { get { return staged; } }
+        public void RefreshStaged() { staged = Update.Staged(); }
+        /// <summary>Put the staged build in place and hand over to it. The window exits straight after.</summary>
+        public bool StartUpdate(out string error) { return Update.Swap(out error); }
 
         public void Init() { Init(true); }
 
@@ -353,6 +365,7 @@ namespace Ohman {
         /// which must not kill the vendor app, move the refresh rate, write a mode byte or start a fan timer --
         /// and which can run while another Ohman is already doing all four.</summary>
         public void Init(bool apply) {
+            RefreshStaged();        // a build downloaded in an earlier session is still there to be offered
             try { OnBattery = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline; } catch { }
             Board = Platforms.ReadBoard();
             Model = Platforms.ReadModel();
@@ -549,11 +562,11 @@ namespace Ohman {
         /// the curve uses when it cannot see a temperature at all, which is exactly the situation we are about
         /// to be in, so it is the right number to leave behind. Never writes lower than what is already set.</summary>
         public void Park() { Park(false); }
-        /// <param name="machineGoingDown">Windows is logging off or restarting. The level we leave behind is
-        /// replayed by the firmware for about two minutes, which on a restart is most of the next boot: an owner
-        /// who quit at idle got Fallback back at the login screen and read it as the fans maxing out. Going down,
-        /// the handover we are covering for does not exist, so leave the level where the curve already had it.</param>
-        public void Park(bool machineGoingDown) {
+        /// <param name="quiet">Nothing is going to need the parting level raised: Windows is logging off or
+        /// restarting, or a replacement build is starting this second. The level we leave behind is replayed by
+        /// the firmware for about two minutes, which on a restart is most of the next boot: an owner who quit at
+        /// idle got Fallback back at the login screen and read it as the fans maxing out.</param>
+        public void Park(bool quiet) {
             // Give the keyboard back before anything else. To paint it at all we switch Windows Dynamic Lighting
             // off, and we were never switching it back: quitting left the keyboard frozen on the last thing we
             // wrote, with Windows told to keep out of it. One owner uninstalled Ohman, rebooted, and still had
@@ -577,7 +590,7 @@ namespace Ohman {
                 // The level is still written high on purpose. The firmware replays the last pair for about two
                 // minutes before its own curve resumes, and that is the handover: a hot machine keeps its cooling
                 // across it rather than dropping to a middling level the moment we quit.
-                int want = Math.Max(machineGoingDown ? 0 : P.Curve.Fallback, Math.Max(curLevel1, curLevel2));
+                int want = Math.Max(quiet ? 0 : P.Curve.Fallback, Math.Max(curLevel1, curLevel2));
                 lock (applySync) WriteLevels(want, want, "Fan level on exit");
                 Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }

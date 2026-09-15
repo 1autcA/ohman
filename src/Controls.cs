@@ -210,7 +210,11 @@ namespace Ohman {
     sealed class NavBtn : Border {
         public readonly int Index;
         readonly List<Shape> strokes = new List<Shape>(), fills = new List<Shape>();
-        bool sel;
+        bool sel, accent;
+        /// <summary>Draw in the accent colour even when this is not the page being shown. The update button is
+        /// the only one that does: it is a notice as much as a button, and on a rail of icons the colour is the
+        /// only thing that says so without being hovered.</summary>
+        public bool Accent { set { accent = value; Tint(); } }
         public event Action<int> Clicked;
         public NavBtn(int index, string tip, string[] strokePaths, string[] fillPaths) {
             Index = index;
@@ -238,7 +242,7 @@ namespace Ohman {
         }
         public void SetSelected(bool on) { sel = on; Tint(); }
         void Tint() {
-            var b = sel ? Ui.TextB : (IsMouseOver ? Ui.Sub : Ui.Axis);
+            var b = sel ? Ui.TextB : IsMouseOver ? Ui.Sub : accent ? (Brush)Ui.Accent : Ui.Axis;
             foreach (var p in strokes) p.Stroke = b;
             foreach (var p in fills) p.Fill = b;
         }

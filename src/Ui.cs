@@ -44,6 +44,7 @@ namespace Ohman {
         const string BOLT = "M13 2 L4 14 L11 14 L10 22 L20 9 L13 9 Z";
         const string ICO_HOME_RING = "M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 Z";
         const string ICO_HOME_DOT = "M12 8.6 A3.4 3.4 0 1 0 12 15.4 A3.4 3.4 0 1 0 12 8.6 Z";
+        const string ICO_UPDATE = "M12 4 V14.2 M7.6 10.2 L12 14.8 L16.4 10.2 M4.6 19 H19.4";
         const string ICO_FANS = "M3 8.5 C5.5 5.5 8.5 11.5 12 8.5 C15.5 5.5 18.5 11.5 21 8.5 M3 15.5 C5.5 12.5 8.5 18.5 12 15.5 C15.5 12.5 18.5 18.5 21 15.5";
         const string ICO_KBD = "M2.5 7.5 A2 2 0 0 1 4.5 5.5 H19.5 A2 2 0 0 1 21.5 7.5 V16.5 A2 2 0 0 1 19.5 18.5 H4.5 A2 2 0 0 1 2.5 16.5 Z M6 9.5 H6.4 M9.8 9.5 H10.2 M13.6 9.5 H14 M17.4 9.5 H17.8 M6 12.5 H6.4 M9.8 12.5 H10.2 M13.6 12.5 H14 M17.4 12.5 H17.8 M7.5 15.5 H16.5";
 
@@ -103,7 +104,9 @@ namespace Ohman {
         bool hexTyping;
         // settings
         Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg;
-        TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
+        TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnNotes, btnDiag, btnLog, btnExit;
+        Border updateRow;
+        NavBtn navUpdate;
         FrameworkElement keyCmdRow, gfxRow, hzRow, lowHzRow, gpuRow;
         TextBox txtKeyCmd;
         Ellipse keyDot;
@@ -198,7 +201,7 @@ namespace Ohman {
             SourceInitialized += OnSourceInit;
             Loaded += OnLoaded;
             Closing += delegate(object o, System.ComponentModel.CancelEventArgs ce) { if (!exiting) { ce.Cancel = true; HideToTray(); } };
-            Application.Current.SessionEnding += delegate { goingDown = true; ExitApp(); };   // logoff/shutdown: leave cleanly, and quietly
+            Application.Current.SessionEnding += delegate { quietExit = true; ExitApp(); };   // logoff/shutdown: leave cleanly, and quietly
             StateChanged += delegate { if (WindowState == WindowState.Minimized) { WindowState = WindowState.Normal; HideToTray(); } };
             IsVisibleChanged += delegate { PollRate(); if (IsVisible) ReadHardwareAsync(); };
             LocationChanged += delegate { if (IsVisible && WindowState == WindowState.Normal && Left > -30000 && !morphing) { E.S.WinX = (int)Left; E.S.WinY = (int)Top; } };
@@ -359,6 +362,9 @@ namespace Ohman {
             txtKeyCmdHint = F<TextBlock>("TxtKeyCmdHint");
             txtUpdate = F<TextBlock>("TxtUpdate");
             btnUpdate = F<TextBlock>("BtnUpdate");
+            btnNotes = F<TextBlock>("BtnNotes");
+            txtUpdateTitle = F<TextBlock>("TxtUpdateTitle");
+            updateRow = F<Border>("UpdateRow");
             btnDiag = F<TextBlock>("BtnDiag");
             btnSupport = F<TextBlock>("BtnSupport");
             btnReset = F<TextBlock>("BtnReset");
@@ -410,6 +416,16 @@ namespace Ohman {
             host.Children.Add(nav[0]);
             host.Children.Add(nav[1]);
             host.Children.Add(nav[2]);
+            // Above Settings, and only while there is something to install. It is a signpost rather than a page:
+            // it goes where the update lives instead of doing anything itself, so nothing is one stray click from
+            // restarting the app. It stays out of nav[] deliberately -- the rail pill tracks the current page, and
+            // this button never is one.
+            navUpdate = new NavBtn(-1, "Update available", new[] { ICO_UPDATE }, new string[0]);
+            navUpdate.HorizontalAlignment = HorizontalAlignment.Center;
+            navUpdate.Accent = true;
+            navUpdate.Visibility = Visibility.Collapsed;
+            navUpdate.Clicked += delegate { ShowUpdateRow(); };
+            bottom.Children.Add(navUpdate);
             bottom.Children.Add(nav[3]);
             if (E.Light == null) nav[2].Visibility = Visibility.Collapsed;
             logoHost.MouseLeftButtonDown += delegate(object o, MouseButtonEventArgs e) { e.Handled = true; Navigate(Page.Home, true); };
@@ -588,9 +604,11 @@ namespace Ohman {
             OnSwitch(tgUpdateAuto, delegate(bool on) { Bg(delegate { E.SetUpdateOnLaunch(on); }); });
 
             btnUpdate.MouseLeftButtonUp += delegate {
-                if (E.UpdateAvailable) { try { Process.Start(new ProcessStartInfo(Update.ReleasesUrl) { UseShellExecute = true }); } catch (Exception ex) { ShowToast("Cannot open the releases page: " + ex.Message, true); } return; }
+                if (E.Staged != null) { DoUpdate(); return; }
+                if (E.UpdateAvailable) { OpenReleases(); return; }
                 txtUpdate.Text = "checking…"; Slow(delegate { E.CheckForUpdate(true); });
             };
+            btnNotes.MouseLeftButtonUp += delegate { OpenReleases(); };
             btnDiag.MouseLeftButtonUp += delegate {
                 if (txtDiag.Visibility == Visibility.Visible) { txtDiag.Visibility = Visibility.Collapsed; return; }
                 txtDiag.Text = "running…";
@@ -1562,10 +1580,40 @@ namespace Ohman {
             btnLearn.Text = known ? "Relearn" : "Learn";
         }
         void UpdateUpdateRow() {
+            string staged = E.Staged;
             bool newer = E.UpdateAvailable;
-            txtUpdate.Text = Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
-            txtUpdate.Foreground = newer ? (Brush)accent : Ui.Desc;
-            btnUpdate.Text = newer ? "Download" : "Check now";
+            // Three states, and the difference that matters is whether the new build is already on disk. Only
+            // then is restarting a promise we can keep, so only then does the row offer it.
+            txtUpdateTitle.Text = staged != null ? "Update ready" : "Check for updates";
+            txtUpdate.Text = staged != null
+                ? Program.Version + " → " + staged + " · restart to finish"
+                : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
+            txtUpdate.Foreground = (staged != null || newer) ? (Brush)accent : Ui.Desc;
+            btnUpdate.Text = staged != null ? "Restart" : newer ? "Download" : "Check now";
+            btnNotes.Visibility = (staged != null || newer) ? Visibility.Visible : Visibility.Collapsed;
+            if (navUpdate != null) {
+                navUpdate.Visibility = staged != null ? Visibility.Visible : Visibility.Collapsed;
+                navUpdate.ToolTip = staged == null ? "Update available" : "Update to " + staged + " is ready";
+            }
+        }
+        /// <summary>The rail button and the Settings link both end here. The row is near the bottom of a page that
+        /// scrolls, so arriving at Settings without this puts the thing that was clicked for off-screen.</summary>
+        void ShowUpdateRow() {
+            Navigate(Page.Settings, true);
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate { try { updateRow.BringIntoView(); } catch { } });
+        }
+        void OpenReleases() {
+            try { Process.Start(new ProcessStartInfo(Update.ReleasesUrl) { UseShellExecute = true }); }
+            catch (Exception ex) { ShowToast("Cannot open the releases page: " + ex.Message, true); }
+        }
+        void DoUpdate() {
+            string err;
+            if (!E.StartUpdate(out err)) { ShowToast("Could not install the update: " + err, true); return; }
+            // The replacement is already starting and is waiting on the single-instance mutex for this process to
+            // end, so the fans are handed straight over: no reason to raise the parting level for a gap that is
+            // about a second long.
+            quietExit = true;
+            ExitApp();
         }
 
         void ApplyModeAsync(int idx) {
@@ -1807,6 +1855,7 @@ namespace Ohman {
             else if (page == "keyboard" && E.Light != null) Navigate(Page.Keyboard, false);
             else if (page == "settings") Navigate(Page.Settings, false);
             Morph(false);
+            if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);
             if (screenshotPath == null) return;
             var started = DateTime.Now;
@@ -1887,7 +1936,7 @@ namespace Ohman {
             }) { IsBackground = true, Name = "show-listener" };
             t.Start();
         }
-        bool resetting, goingDown;
+        bool resetting, quietExit;
         void ExitApp() {
             if (exiting) return;
             exiting = true;
@@ -1898,7 +1947,7 @@ namespace Ohman {
             try { if (tray != null) { tray.Visible = false; tray.Dispose(); } } catch { }
             try { if (osd != null) osd.Close(); } catch { }
             try { if (trayTempIcon != null) { IntPtr h = trayTempIcon.Handle; trayTempIcon.Dispose(); DestroyIcon(h); } } catch { }
-            try { E.Park(goingDown); } catch { }   // before Dispose: the timers must still be alive to write
+            try { E.Park(quietExit); } catch { }   // before Dispose: the timers must still be alive to write
             try { E.Dispose(); } catch { }
             try { sensors.Dispose(); } catch { }
             Log.Write("exit");

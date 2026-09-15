@@ -12,7 +12,11 @@ data, or measured directly through the interface. Inferred values are marked as 
   `CommandType` = the opcode, `Size`, `hpqBData` = payload. Output: `Data`, `rwReturnCode` (0 = OK),
   `Sign` = `PASS`/`FAIL`. Instances are only visible to administrators.
 - Events: class `hpqBEvnt` with `EventID` and `EventData`.
-- Return code 5 = unsupported on this SKU (`0x13`, `0x2A`, `0x35`).
+- Return code 5 is `HPWMI_RET_INVALID_PARAMETERS` in `hp-wmi.c`, and OmenMon reads it as an insufficient
+  buffer: it is about the request, not the SKU. Seen on `0x13`, `0x2A`, `0x35`. Return code 3 is
+  `HPWMI_RET_UNKNOWN_COMMAND`, which a zero-length input buffer can also provoke on a command the firmware
+  does support. Codes 1, 4, 6 and 46 are undocumented; 6 from the graphics write is accepted-pending-restart,
+  since OGH gets the same code on the same board and the mode changes at the next boot.
 
 ## 2. Commands (CommandType under 0x20008)
 
@@ -28,7 +32,7 @@ data, or measured directly through the interface. Inferred values are marked as 
 | `0x2C` | out128 `[0]` | Fan types, one nibble each (`0x21` = fan 1 CPU, fan 2 GPU) | measured |
 | `0x2D` | out128 `[0]`, `[1]` | Fan levels, RPM ÷ 100. Max fan reads 59 / 57 | measured |
 | `0x2E` | `{fan1, fan2, …}` (128 bytes) | Set fan levels. Level 0 switches the fan off (§4) | OGH log; measured |
-| `0x2F` | out128 | Fan table: `[0]` fan count, `[1]` entry count, then `{fan1, fan2, temp}` triplets | measured |
+| `0x2F` | out128 | Fan table: `[0]` fan count, `[1]` entry count, then `{fan1, fan2, noise dB}` triplets. The third byte is noise, not temperature (kernel `victus_s_fan_table_entry`). The first row is the firmware's own minimum, and on some boards it is `0/0` | measured; corrected against `hp-wmi.c` |
 
 ## 3. Eco
 

@@ -104,7 +104,7 @@ namespace Ohman {
         public const uint OP_CPU_POWER_SET = 0x29; // in {PL1, PL2, PL4, LimitWithGpu}, 0xFF = leave unchanged
         public const uint OP_FAN_LEVEL_GET = 0x2D; // out128 -> [0]=fan1 [1]=fan2 (x100 RPM)
         public const uint OP_FAN_LEVEL_SET = 0x2E; // in {fan1, fan2, 0...}
-        public const uint OP_FAN_TABLE_GET = 0x2F; // out128 -> [0]=fan count, [1]=entries, then {fan1, fan2, temp} triplets
+        public const uint OP_FAN_TABLE_GET = 0x2F; // out128 -> [0]=fan count, [1]=entries, then {fan1, fan2, noise dB} triplets
         public const uint OP_FAN_TYPE = 0x2C;      // out128 -> [0] one nibble per fan; see GetFanCountPassive
 
         // Thermal-policy v1 mode bytes (this machine reports policy v1 in system data byte 3).
@@ -242,13 +242,21 @@ namespace Ohman {
 
         // The lowest level any HP firmware has been measured to keep a fan actually spinning. This is a floor under
         // the profiles, not the model's own floor: PlatformProfile.Curve.Floor is that, and may be higher.
+        // 18 was described here as the lowest level any HP firmware keeps a fan spinning. It is not: it is the
+        // lower bound of OGH's custom-curve editor, and OGH's own default tables for these machines start at 0.
+        // The Transcend 14's is [0, 23, 25, 27, ...]; an OMEN Transcend 14 (2025) runs its fans off entirely
+        // until 74 C. So 0 is a level HP itself writes through this same command, and refusing to pass it on was
+        // why four owners could silence their fans with OGH and not with Ohman.
+        //
+        // What stays refused is 1..17. Nothing writes those deliberately, and a fan asked for a speed it cannot
+        // hold is worse than one told to stop: it is off, but nothing above knows it is.
         public const int AbsoluteFloor = 18;
+        static int Level(int v) { return v <= 0 ? 0 : Math.Max(AbsoluteFloor, Math.Min(255, v)); }
         public void SetFanLevels(int fan1, int fan2) {
             // OGH on this machine sends a 128-byte buffer with the two levels in front; mirror it exactly.
             var d = new byte[128];
-            // Level 0 switches a fan off on this firmware (measured); the hardware layer refuses anything below the floor.
-            d[0] = (byte)Math.Max(AbsoluteFloor, Math.Min(255, fan1));
-            d[1] = (byte)Math.Max(AbsoluteFloor, Math.Min(255, fan2));
+            d[0] = (byte)Level(fan1);
+            d[1] = (byte)Level(fan2);
             Call(OP_FAN_LEVEL_SET, d, 0);
         }
 
@@ -263,8 +271,25 @@ namespace Ohman {
         // Graphics switching lives in the legacy mailbox: command 1 = read BIOS config, 2 = write; type 0x52.
         // OGH: mode = data[0] & 0x7F; on write, bit 7 set means "no reboot" and is only used on platforms from cycle 26C1 on.
         public const uint CMD_BIOS_READ = 1, CMD_BIOS_WRITE = 2, OP_GPU_MODE = 0x52;
-        public int GetGpuMode() { var d = Call(CMD_BIOS_READ, OP_GPU_MODE, new byte[0], 4); return d.Length > 0 ? (d[0] & 0x7F) : -1; }
-        public void SetGpuMode(int mode) { Call(CMD_BIOS_WRITE, OP_GPU_MODE, new byte[] { (byte)(mode & 0x7F), 0, 0, 0 }, 0); }
+        // Four zero bytes, not an empty buffer. hpqBDataIn sizes the input from Size, so an empty one reaches
+        // the firmware as a 16 byte buffer; ACPI methods that build fields at fixed offsets then fault, and the
+        // call comes back rc 3, "unknown command". Mainline hp-wmi carries a fix for exactly this - "Resolve WMI
+        // query failures on some devices", found on an OMEN 15-ek0xxx - which pads every input instead. This was
+        // the only read Ohman made with an empty buffer, and it is the one board 8BC2 could not use: OGH reads
+        // the same command on the same machine and gets an answer.
+        public int GetGpuMode() { var d = Call(CMD_BIOS_READ, OP_GPU_MODE, Z4, 4); return d.Length > 0 ? (d[0] & 0x7F) : -1; }
+        public void SetGpuMode(int mode) {
+            try { Call(CMD_BIOS_WRITE, OP_GPU_MODE, new byte[] { (byte)(mode & 0x7F), 0, 0, 0 }, 0); }
+            catch (BiosException ex) {
+                // 6 is not a refusal here. OGH sends this same payload on 8BC2, gets the same 6, writes it to its
+                // log as an error, carries on to its restart prompt - and the mode has changed by the next boot.
+                // It is not in hp-wmi's return codes; HP's other BIOS interface uses 6 for access denied, and on
+                // this mailbox it reads as "accepted, restart to apply". Reporting it as a failure told an owner
+                // his board could not switch graphics when it had just agreed to.
+                if (ex.Code != 6) throw;
+                Log.Write("graphics mode: rc 6, taken as accepted pending restart");
+            }
+        }
     }
 
     public sealed class BiosException : Exception {

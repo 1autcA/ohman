@@ -1973,17 +1973,30 @@ namespace Ohman {
         static string SchtasksOut(string args) {
             try {
                 var psi = new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true };
-                using (var p = Process.Start(psi)) {
-                    if (!p.WaitForExit(5000)) { try { p.Kill(); } catch { } p.WaitForExit(); Log.Write("schtasks timed out: " + args); return ""; }
-                    return p.StandardOutput.ReadToEnd();
+                var outLines = new System.Text.StringBuilder();
+                using (var p = new Process()) {
+                    p.StartInfo = psi;
+                    p.OutputDataReceived += delegate(object s, DataReceivedEventArgs e) { if (e.Data != null) lock (outLines) outLines.Append(e.Data).Append("\n"); };
+                    p.Start();
+                    p.BeginOutputReadLine();
+                    if (p.WaitForExit(5000)) { p.WaitForExit(); return outLines.ToString(); }
+                    try { p.Kill(); } catch { }
+                    p.WaitForExit(2000);
+                    if (!p.HasExited) Log.Write("could not stop schtasks: " + args);
+                    Log.Write("schtasks timed out: " + args);
+                    return "";
                 }
             } catch (Exception ex) { Log.Write("schtasks: " + ex.Message); return ""; }
         }
         static int RunSchtasks(string args) {
             try {
                 using (var p = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden })) {
-                    if (!p.WaitForExit(5000)) { try { p.Kill(); } catch { } p.WaitForExit(); Log.Write("schtasks timed out: " + args); return -1; }
-                    return p.ExitCode;
+                    if (p.WaitForExit(5000)) return p.ExitCode;
+                    try { p.Kill(); } catch { }
+                    p.WaitForExit(2000);
+                    if (!p.HasExited) Log.Write("could not stop schtasks: " + args);
+                    Log.Write("schtasks timed out: " + args);
+                    return -1;
                 }
             } catch (Exception ex) { Log.Write("schtasks: " + ex.Message); return -1; }
         }

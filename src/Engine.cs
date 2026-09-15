@@ -950,9 +950,14 @@ namespace Ohman {
             try {
                 var psi = new ProcessStartInfo("schtasks.exe", "/Query /FO CSV /NH") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true };
                 string csv = "";
-                using (var q = Process.Start(psi)) {
-                    if (q.WaitForExit(5000)) csv = q.StandardOutput.ReadToEnd();
-                    else { try { q.Kill(); } catch { } q.WaitForExit(); Log.Write("schtasks query timed out"); }
+                var outLines = new System.Text.StringBuilder();
+                using (var q = new Process()) {
+                    q.StartInfo = psi;
+                    q.OutputDataReceived += delegate(object s, DataReceivedEventArgs e) { if (e.Data != null) lock (outLines) outLines.Append(e.Data).Append("\n"); };
+                    q.Start();
+                    q.BeginOutputReadLine();
+                    if (q.WaitForExit(5000)) { q.WaitForExit(); csv = outLines.ToString(); }
+                    else { try { q.Kill(); } catch { } q.WaitForExit(2000); if (!q.HasExited) Log.Write("could not stop schtasks query"); Log.Write("schtasks query timed out"); }
                 }
                 int n = 0;
                 foreach (string line in csv.Split('\n')) {
@@ -960,7 +965,7 @@ namespace Ohman {
                     string task = line.Split('"')[1];
                     using (var c = Process.Start(new ProcessStartInfo("schtasks.exe", "/Change /TN \"" + task + "\" " + (disable ? "/DISABLE" : "/ENABLE")) { CreateNoWindow = true, UseShellExecute = false })) {
                         if (c.WaitForExit(5000)) { if (c.ExitCode == 0) n++; else Log.Write("schtasks " + task + " rc=" + c.ExitCode); }
-                        else { try { c.Kill(); } catch { } c.WaitForExit(); Log.Write("schtasks " + task + " timed out"); }
+                        else { try { c.Kill(); } catch { } c.WaitForExit(2000); if (!c.HasExited) Log.Write("could not stop " + task); Log.Write("schtasks " + task + " timed out"); }
                     }
                 }
                 Log.Write((disable ? "disabled " : "re-enabled ") + n + " OmenInstallMonitor task(s)");

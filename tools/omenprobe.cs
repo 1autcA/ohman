@@ -2,6 +2,8 @@
 // Usage:
 //   omenprobe read                          -> run every known read command, print raw bytes
 //   omenprobe call <typeHex> <outSize> [bytes...]   e.g. call 1A 4 FF 31 00 00
+//   omenprobe maxfan                        -> does max fan actually do anything on this board?
+//   omenprobe fan <level>                   -> write one fan level to both fans and read it back
 //   omenprobe watch <seconds>               -> print hpqBEvnt events
 //   omenprobe classes                       -> dump hpqBIntM instance + method names
 using System;
@@ -115,6 +117,44 @@ static class P {
                 byte[] data = new byte[pad];
                 for (int i = 4; i < a.Length && i - 4 < pad; i++) data[i - 4] = byte.Parse(a[i], NumberStyles.HexNumber);
                 Try("callpad", type, data, outSize);
+                return 0;
+            }
+            // Asked of owners whose Max button does nothing. Everything here is a command Ohman already
+            // sends, so it tells us what the firmware does with 0x27 without anyone running a procedure.
+            if (a[0] == "maxfan") {
+                byte[] z4 = { 0, 0, 0, 0 };
+                Console.WriteLine("before:");
+                Try("  fan levels(0x2D)", 0x2D, z4, 128);
+                Try("  max fan flag(0x26)", 0x26, z4, 4);
+                Console.WriteLine();
+                Console.WriteLine("turning max fan on, then waiting 15 s ...");
+                Try("  trigger(0x10)", 0x10, z4, 4);
+                Try("  max fan on(0x27)", 0x27, new byte[] { 1 }, 0);
+                Thread.Sleep(15000);
+                Console.WriteLine();
+                Console.WriteLine("after:");
+                Try("  fan levels(0x2D)", 0x2D, z4, 128);
+                Try("  max fan flag(0x26)", 0x26, z4, 4);
+                Console.WriteLine();
+                Console.WriteLine("turning it back off ...");
+                Try("  max fan off(0x27)", 0x27, new byte[] { 0 }, 0);
+                Console.WriteLine();
+                Console.WriteLine("flag 01 with the levels unchanged means the firmware took the flag and ignored it.");
+                Console.WriteLine("flag 00 means it did not keep it at all.");
+                return 0;
+            }
+            // Asked of owners whose manual fan control is refused. Writes one level to both fans the way Ohman
+            // does, 128 byte buffer and all, and reads it straight back.
+            if (a[0] == "fan" && a.Length >= 2) {
+                byte[] z4 = { 0, 0, 0, 0 };
+                int lvl = int.Parse(a[1], CultureInfo.InvariantCulture);
+                var buf = new byte[128];
+                buf[0] = (byte)lvl;
+                buf[1] = (byte)lvl;
+                Try("  trigger(0x10)", 0x10, z4, 4);
+                Try("  set level(0x2E)", 0x2E, buf, 0);
+                Thread.Sleep(8000);
+                Try("  read back(0x2D)", 0x2D, z4, 128);
                 return 0;
             }
             if (a[0] == "watch") {

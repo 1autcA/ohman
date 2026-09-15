@@ -295,7 +295,12 @@ namespace Ohman {
         public int GpuModePending = -1;                     // mode written this session, live after a restart
         public static readonly string[] GpuModeNames = { "Hybrid", "Discrete", "Optimus", "iGPU only" };
         /// <summary>Modes the firmware offers (system-design byte 7): 1 iGPU only, 2 Hybrid, 4 Discrete, 8 Advanced Optimus.</summary>
-        public bool GpuModeOffered(int mode) { int bit = mode == 3 ? 1 : mode == 0 ? 2 : mode == 1 ? 4 : 8; return (Info.GpuModes & bit) != 0; }
+        bool graphicsReadable;
+        public bool GpuModeOffered(int mode) {
+            if (!graphicsReadable && !Hw.IsDemo) return false;
+            int bit = mode == 3 ? 1 : mode == 0 ? 2 : mode == 1 ? 4 : 8;
+            return (Info.GpuModes & bit) != 0;
+        }
         public ILighting Light;                             // null = this keyboard has no controllable lighting (or read-only board)
         public Rgb[] LightColors = new Rgb[0];              // what the app believes the zones show
         public bool ReadOnly { get { return !Supported && !Hw.IsDemo; } }
@@ -385,7 +390,11 @@ namespace Ohman {
                         Log.Write("generic profile: " + g.Notes + " · modes " + g.ModeEco.ToString("X2") + "/" + g.ModeBalanced.ToString("X2") + "/" + g.ModePerformance.ToString("X2") + " · powerGain=" + g.HasPowerGain + " (base " + g.TdpBase + " W) · gpuPower=" + g.HasGpuPower + " · fan ceiling " + g.Curve.Ceiling);
                     } else Log.Write("generic profile not possible (thermal policy v" + Info.ThermalPolicy + "); read-only");
                 }
-                try { GpuMode = Hw.GetGpuMode(); } catch (Exception ex) { Log.Write("graphics mode read: " + ex.Message); }
+                // Byte 7 advertises which graphics modes exist, but 8BC2 advertises them and then refuses 0x52
+                // both ways: rc 3 reading, rc 6 writing. Its owner could pick a mode and nothing happened, so a
+                // firmware that will not say which mode it is in does not get to be asked to change it.
+                try { GpuMode = Hw.GetGpuMode(); graphicsReadable = true; }
+                catch (Exception ex) { Log.Write("graphics mode read: " + ex.Message + " - graphics switching not offered"); }
                 Log.Write("BIOS ok: fans=" + FanCount + " policy=v" + Info.ThermalPolicy + " swFan=" + Info.SwFanControl + " defPL4=" + Info.DefaultPl4 + "W baseTdp=" + Info.DefaultConcurrentTdp + "W raw=" + Info.Hex + (Hw.IsDemo ? " (DEMO)" : ""));
             } catch (Exception ex) { BiosOk = false; LastError = ex.Message; Log.Write("BIOS self-test FAILED: " + ex.Message); }
             // Everything above only looked. Everything below changes the machine, and the support report wants the

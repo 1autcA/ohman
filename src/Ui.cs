@@ -106,6 +106,7 @@ namespace Ohman {
         Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg;
         TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnNotes, btnDiag, btnLog, btnExit;
         Border updateRow;
+        StackPanel updateLinks;
         NavBtn navUpdate;
         FrameworkElement keyCmdRow, gfxRow, hzRow, lowHzRow, gpuRow;
         TextBox txtKeyCmd;
@@ -365,6 +366,7 @@ namespace Ohman {
             btnNotes = F<TextBlock>("BtnNotes");
             txtUpdateTitle = F<TextBlock>("TxtUpdateTitle");
             updateRow = F<Border>("UpdateRow");
+            updateLinks = F<StackPanel>("UpdateLinks");
             btnDiag = F<TextBlock>("BtnDiag");
             btnSupport = F<TextBlock>("BtnSupport");
             btnReset = F<TextBlock>("BtnReset");
@@ -1589,8 +1591,14 @@ namespace Ohman {
                 ? Program.Version + " → " + staged
                 : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
             txtUpdate.Foreground = (staged != null || newer) ? (Brush)accent : Ui.Desc;
-            btnUpdate.Text = staged != null ? "Restart to update" : newer ? "Download" : "Check now";
+            btnUpdate.Text = staged != null ? "Update (restarts " + Program.DisplayName + ")" : newer ? "Download" : "Check now";
             btnNotes.Visibility = (staged != null || newer) ? Visibility.Visible : Visibility.Collapsed;
+            // Beside the title normally, underneath once "Update (restarts Ohman)" joins Changelog: the two of
+            // them and the switch leave the title about 25 px, which clipped it to "Update ı".
+            bool stacked = staged != null;
+            Grid.SetRow(updateLinks, stacked ? 1 : 0);
+            Grid.SetColumn(updateLinks, stacked ? 0 : 1);
+            updateLinks.Margin = new Thickness(0, stacked ? 10 : 0, 18, 0);
             if (navUpdate != null) {
                 navUpdate.Visibility = staged != null ? Visibility.Visible : Visibility.Collapsed;
                 navUpdate.ToolTip = staged == null ? "Update available" : "Update to " + staged + " is ready";

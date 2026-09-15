@@ -949,13 +949,19 @@ namespace Ohman {
             if (Hw.IsDemo) return;
             try {
                 var psi = new ProcessStartInfo("schtasks.exe", "/Query /FO CSV /NH") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true };
-                string csv;
-                using (var q = Process.Start(psi)) { csv = q.StandardOutput.ReadToEnd(); q.WaitForExit(5000); }
+                string csv = "";
+                using (var q = Process.Start(psi)) {
+                    if (q.WaitForExit(5000)) csv = q.StandardOutput.ReadToEnd();
+                    else { try { q.Kill(); } catch { } q.WaitForExit(); Log.Write("schtasks query timed out"); }
+                }
                 int n = 0;
                 foreach (string line in csv.Split('\n')) {
                     if (!line.StartsWith("\"\\OmenInstallMonitor", StringComparison.OrdinalIgnoreCase)) continue;
                     string task = line.Split('"')[1];
-                    using (var c = Process.Start(new ProcessStartInfo("schtasks.exe", "/Change /TN \"" + task + "\" " + (disable ? "/DISABLE" : "/ENABLE")) { CreateNoWindow = true, UseShellExecute = false })) { c.WaitForExit(5000); if (c.ExitCode == 0) n++; else Log.Write("schtasks " + task + " rc=" + c.ExitCode); }
+                    using (var c = Process.Start(new ProcessStartInfo("schtasks.exe", "/Change /TN \"" + task + "\" " + (disable ? "/DISABLE" : "/ENABLE")) { CreateNoWindow = true, UseShellExecute = false })) {
+                        if (c.WaitForExit(5000)) { if (c.ExitCode == 0) n++; else Log.Write("schtasks " + task + " rc=" + c.ExitCode); }
+                        else { try { c.Kill(); } catch { } c.WaitForExit(); Log.Write("schtasks " + task + " timed out"); }
+                    }
                 }
                 Log.Write((disable ? "disabled " : "re-enabled ") + n + " OmenInstallMonitor task(s)");
             } catch (Exception ex) { Log.Write("OGH tasks: " + ex.Message); }

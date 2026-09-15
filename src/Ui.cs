@@ -1973,12 +1973,18 @@ namespace Ohman {
         static string SchtasksOut(string args) {
             try {
                 var psi = new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true };
-                using (var p = Process.Start(psi)) { string o = p.StandardOutput.ReadToEnd(); p.WaitForExit(5000); return o; }
+                using (var p = Process.Start(psi)) {
+                    if (!p.WaitForExit(5000)) { try { p.Kill(); } catch { } p.WaitForExit(); Log.Write("schtasks timed out: " + args); return ""; }
+                    return p.StandardOutput.ReadToEnd();
+                }
             } catch (Exception ex) { Log.Write("schtasks: " + ex.Message); return ""; }
         }
         static int RunSchtasks(string args) {
             try {
-                using (var p = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden })) { p.WaitForExit(5000); return p.ExitCode; }
+                using (var p = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden })) {
+                    if (!p.WaitForExit(5000)) { try { p.Kill(); } catch { } p.WaitForExit(); Log.Write("schtasks timed out: " + args); return -1; }
+                    return p.ExitCode;
+                }
             } catch (Exception ex) { Log.Write("schtasks: " + ex.Message); return -1; }
         }
     }

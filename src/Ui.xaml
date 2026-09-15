@@ -751,6 +751,16 @@
                 <Border x:Name="PollSegHost" Grid.Column="1" VerticalAlignment="Center"/>
               </Grid>
             </Border>
+            <Border BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+                  <TextBlock Text="Uninstall" Style="{StaticResource Row}"/>
+                  <TextBlock Text="Resets to default then quits" Style="{StaticResource RowSub}"/>
+                </StackPanel>
+                <TextBlock x:Name="BtnReset" Grid.Column="1" Style="{StaticResource Link}" FontSize="13" Text="Reset" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
             <Border x:Name="UpdateRow" BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -758,19 +768,9 @@
                   <TextBlock x:Name="TxtUpdateTitle" Text="Check for updates" Style="{StaticResource Row}"/>
                   <TextBlock x:Name="TxtUpdate" Style="{StaticResource RowSub}" FontFamily="{DynamicResource MonoFont}" FontSize="11"/>
                 </StackPanel>
-                <TextBlock x:Name="BtnNotes" Grid.Column="1" Style="{StaticResource Link}" Text="what's new" Margin="0,0,18,0" Visibility="Collapsed"/>
+                <TextBlock x:Name="BtnNotes" Grid.Column="1" Style="{StaticResource Link}" Text="changelog" Margin="0,0,18,0" Visibility="Collapsed"/>
                 <TextBlock x:Name="BtnUpdate" Grid.Column="2" Style="{StaticResource Link}" Text="Check now" Margin="0,0,18,0"/>
                 <ToggleButton x:Name="TgUpdateAuto" Grid.Column="3" Style="{StaticResource Switch}" ToolTip="Check once a day when Ohman starts, and download a new version in the background"/>
-              </Grid>
-            </Border>
-            <Border BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
-              <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
-                  <TextBlock Text="Reset and remove" Style="{StaticResource Row}"/>
-                  <TextBlock Text="Undoes everything Ohman changed on this laptop, then quits" Style="{StaticResource RowSub}"/>
-                </StackPanel>
-                <TextBlock x:Name="BtnReset" Grid.Column="1" Style="{StaticResource Link}" FontSize="13" Text="Reset" VerticalAlignment="Center"/>
               </Grid>
             </Border>
             <TextBlock x:Name="TxtDiag" Style="{StaticResource Mono}" FontSize="10.5" Margin="0,14,0,0" Visibility="Collapsed" TextWrapping="Wrap"/>

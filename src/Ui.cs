@@ -1589,7 +1589,7 @@ namespace Ohman {
                 ? Program.Version + " → " + staged
                 : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
             txtUpdate.Foreground = (staged != null || newer) ? (Brush)accent : Ui.Desc;
-            btnUpdate.Text = staged != null ? "Restart" : newer ? "Download" : "Check now";
+            btnUpdate.Text = staged != null ? "Restart to update" : newer ? "Download" : "Check now";
             btnNotes.Visibility = (staged != null || newer) ? Visibility.Visible : Visibility.Collapsed;
             if (navUpdate != null) {
                 navUpdate.Visibility = staged != null ? Visibility.Visible : Visibility.Collapsed;

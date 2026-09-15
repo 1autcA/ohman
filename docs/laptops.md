@@ -22,6 +22,9 @@ did what it says. Its settings are then fixed rather than worked out at run time
 | OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
 | OMEN 15z-en100 (2021) | `88D2` | 2026-09-13 | Owner confirmed it works. Listed in `hp-wmi`, driven with the mode bytes for its firmware generation. |
 | OMEN 16-wf0xxx (2023) | `8BAB` | 2026-09-14 | Full checklist run by an owner: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the keyboard all confirmed, and the fans returned to normal after exiting. A second owner on a 16-wf0120TX (i5-13500HX + RTX 4050, BIOS F.29) confirmed fans and lighting independently, with OMEN Gaming Hub and Light Studio both uninstalled. |
+| OMEN 16-xd0xxx | `8BCD` | 2026-09-15 | Ryzen 7 7840HS + Radeon 780M, BIOS F.31. Owner ran the checklist: modes, max fan, manual, curve, power gain, GPU power, graphics switching, the four-zone keyboard and all four effects, and the fans returned to normal after exiting. |
+| OMEN 17-ck2013nl | `8BAD` | 2026-09-15 | Owner confirmed modes, max fan, manual, curve, auto, GPU power and that the fans return after exiting. The keyboard lighting does not work on this machine and is still open. A timed thermal profile board in `hp-wmi`, so the fans respond to a mode change even where the power limits may not. |
+| OMEN 15 / 17 | `8787` | 2026-09-15 | Owner confirmed the controls work. |
 | Victus 16-d1xxx | `8A26` | 2026-09-14 | Core i7-12700H + RTX 3050, BIOS F.22. Owner ran it as a full OMEN Gaming Hub replacement and confirmed fan control, the custom curve and the modes all work with OGH uninstalled. Reports thermal policy v0, so Eco and Balanced send the same byte and only Performance differs. |
 | Victus 16-e0xxx | `88EE` | 2026-09-13 | Owner confirmed it works. Not in `hp-wmi`; driven from the firmware's own answers. |
 | Victus 15-fa2405TX | `8DCF` | 2026-09-13 | Owner confirmed modes, fans and the keyboard backlight all work, with no HP software installed. Driven from the firmware's own answers. |
@@ -46,7 +49,7 @@ reuses a board across several SKUs.
 | Model | Board ids |
 |---|---|
 | OMEN 16 (2021–2022) | `8A42`, `8A43` |
-| OMEN 16 (2023–2025) | `8BAA`, `8BCA`, `8BCD`, `8C76`, `8C77`, `8C78`, `8D24`, `8D26`, `8D2F`, `8E35` |
+| OMEN 16 (2023–2025) | `8BAA`, `8BCA`, `8C76`, `8C77`, `8C78`, `8D24`, `8D26`, `8D2F`, `8E35` |
 | OMEN MAX 16 (2025) | `8D41`, `8D87` |
 
 ### OMEN 15 and OMEN 17

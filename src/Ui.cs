@@ -1586,7 +1586,7 @@ namespace Ohman {
             // then is restarting a promise we can keep, so only then does the row offer it.
             txtUpdateTitle.Text = staged != null ? "Update ready" : "Check for updates";
             txtUpdate.Text = staged != null
-                ? Program.Version + " → " + staged + " · restart to finish"
+                ? Program.Version + " → " + staged
                 : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
             txtUpdate.Foreground = (staged != null || newer) ? (Brush)accent : Ui.Desc;
             btnUpdate.Text = staged != null ? "Restart" : newer ? "Download" : "Check now";
@@ -1600,7 +1600,18 @@ namespace Ohman {
         /// scrolls, so arriving at Settings without this puts the thing that was clicked for off-screen.</summary>
         void ShowUpdateRow() {
             Navigate(Page.Settings, true);
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate { try { updateRow.BringIntoView(); } catch { } });
+            // After the page has laid out, or the row has no position yet. BringIntoView would do the smallest
+            // scroll that makes it visible, which leaves it jammed against the bottom edge; this puts it a little
+            // way up the page and eases there the way every other scroll in the app does.
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate {
+                try {
+                    var content = scroll.Content as FrameworkElement;
+                    if (content == null) return;
+                    double y = updateRow.TranslatePoint(new Point(0, 0), content).Y;
+                    scrollTo = Math.Max(0, Math.Min(scroll.ScrollableHeight, y - 96));
+                    if (!scrolling) { scrolling = true; CompositionTarget.Rendering += ScrollTick; }
+                } catch { }
+            });
         }
         void OpenReleases() {
             try { Process.Start(new ProcessStartInfo(Update.ReleasesUrl) { UseShellExecute = true }); }
@@ -1854,6 +1865,7 @@ namespace Ohman {
             if (page == "fans") Navigate(Page.Fans, false);
             else if (page == "keyboard" && E.Light != null) Navigate(Page.Keyboard, false);
             else if (page == "settings") Navigate(Page.Settings, false);
+            else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);

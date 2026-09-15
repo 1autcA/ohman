@@ -35,7 +35,7 @@ namespace Ohman {
         public static bool JustUpdated;                       // --updated: this build was started by the one it replaced
         public static bool FlashTest;                         // --flash: show the key OSD at start (preview/screenshot aid)
         public static bool KeyboardTest;                      // --keyboard: open the keyboard page at start (screenshot aid)
-        public static string StartPage = "";                  // --page home|fans|keyboard|settings
+        public static string StartPage = "";                  // --page home|fans|keyboard|settings|update
 
         [STAThread]
         public static int Main(string[] args) {

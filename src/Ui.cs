@@ -1590,13 +1590,20 @@ namespace Ohman {
             // The title is the button once there is a build to install. It names what restarts, which a laptop
             // utility has to, and it does it in the space a heading takes anyway - so the right of the row is
             // free for Changelog, and nothing has to wrap.
-            txtUpdateTitle.Text = staged != null ? "Restart " + Program.DisplayName + " to update" : "Check for updates";
-            txtUpdateTitle.Foreground = staged != null ? (Brush)accent : Ui.TextB;
+            // Accent only on the words that are the action. "to update" is what it is for, not part of the press,
+            // and colouring it too made the whole heading read as one long link.
+            txtUpdateTitle.Inlines.Clear();
+            if (staged != null) {
+                txtUpdateTitle.Inlines.Add(new Run("Restart " + Program.DisplayName) { Foreground = accent });
+                txtUpdateTitle.Inlines.Add(new Run(" to update") { Foreground = Ui.TextB });
+            } else txtUpdateTitle.Inlines.Add(new Run("Check for updates") { Foreground = Ui.TextB });
             updateText.Cursor = staged != null ? Cursors.Hand : null;
             txtUpdate.Text = staged != null
                 ? Program.Version + " → " + staged
                 : Program.Version + " · " + Update.Ago(E.LastUpdateCheck) + (newer ? " · " + E.LatestVersion + " available" : "");
-            txtUpdate.Foreground = (staged != null || newer) ? (Brush)accent : Ui.Desc;
+            // Only the thing that can be clicked is accent. The version line under it went blue too, which put
+            // two competing blues in one row and made a plain caption look like a second link.
+            txtUpdate.Foreground = (staged == null && newer) ? (Brush)accent : Ui.Desc;
             btnUpdate.Text = staged != null ? "Changelog" : newer ? "Download" : "Check now";
             if (navUpdate != null) {
                 navUpdate.Visibility = staged != null ? Visibility.Visible : Visibility.Collapsed;

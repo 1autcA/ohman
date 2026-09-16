@@ -25,6 +25,7 @@ did what it says. Its settings are then fixed rather than worked out at run time
 | OMEN 17-db1xxx | `8E10` | 2026-09-16 | Ryzen AI 7 350, BIOS F.20. Owner ran the checklist: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the fans returning after exit. The keyboard is white only, so the colour rows have nothing to change. |
 | Victus 16-r0xxx | `8BBE` | 2026-09-16 | Core i5-13500H, BIOS F.31. Owner filed a report with nothing wrong on it. |
 | OMEN 16-k0006nl | `8A4C` | 2026-09-16 | Owner confirmed the controls work. |
+| OMEN Transcend 16-u0xxx | `8BB3` | 2026-09-16 | Owner filed a report with nothing wrong on it. |
 | OMEN 16-xd0xxx | `8BCD` | 2026-09-15 | Ryzen 7 7840HS + Radeon 780M, BIOS F.31. Owner ran the checklist: modes, max fan, manual, curve, power gain, GPU power, graphics switching, the four-zone keyboard and all four effects, and the fans returned to normal after exiting. |
 | OMEN 17-ck2013nl | `8BAD` | 2026-09-15 | Owner confirmed modes, max fan, manual, curve, auto, GPU power and that the fans return after exiting. The keyboard lighting does not work on this machine and is still open. A timed thermal profile board in `hp-wmi`, so the fans respond to a mode change even where the power limits may not. |
 | OMEN 15 / 17 | `8787` | 2026-09-15 | Owner confirmed the controls work. |
@@ -45,7 +46,7 @@ reuses a board across several SKUs.
 
 | Model | Board ids |
 |---|---|
-| OMEN Transcend 16 (2023–2025) | `8BB3`, `8C3B`, `8C4D` |
+| OMEN Transcend 16 (2023–2025) | `8C3B`, `8C4D` |
 
 ### OMEN 16 and OMEN MAX
 

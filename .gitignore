@@ -12,6 +12,8 @@ preview/
 tools/verify.txt
 tools/powertest.txt
 tools/fantest.txt
+tools/fanwatch.txt
+tools/lighttest.txt
 tools/support-info.txt
 support-info.txt
 

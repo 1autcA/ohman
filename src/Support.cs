@@ -216,7 +216,12 @@ namespace Ohman {
                 Probe(sb, "0x21 gpu power", Bios.CMD_DEFAULT, 0x21, z4, 4);
                 Probe(sb, "0x26 max fan", Bios.CMD_DEFAULT, 0x26, z4, 4);
                 Probe(sb, "0x2B keyboard type", Bios.CMD_DEFAULT, 0x2B, z4, 4);
-                Probe(sb, "0x52 graphics mode", Bios.CMD_DEFAULT, 0x52, z4, 4);
+                // The legacy mailbox, not the default one. Graphics mode is command 1 (read) / 2 (write) with
+                // type 0x52, the way Bios.GetGpuMode asks for it. Sent to CMD_DEFAULT it is simply an unknown
+                // command, so this line read NO on every laptop - including 8E10 and 8BCD, whose owners had
+                // confirmed graphics switching works. It was then used as evidence that board 8BC2 refused the
+                // read, which it never did: 8BC2 reported a mode on 1.0.5 and on 1.0.6 alike.
+                Probe(sb, "0x52 graphics mode", Bios.CMD_BIOS_READ, 0x52, z4, 4);
                 // 0x10 is deliberately not here: that query is the firmware's user-defined-fan trigger, not a read.
                 Probe(sb, "0x20009/01 support", BiosLighting.CMD, 0x01, z4, 128);
                 Probe(sb, "0x20009/02 colours", BiosLighting.CMD, 0x02, new byte[] { 0 }, 128);

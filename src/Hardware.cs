@@ -272,11 +272,15 @@ namespace Ohman {
         // OGH: mode = data[0] & 0x7F; on write, bit 7 set means "no reboot" and is only used on platforms from cycle 26C1 on.
         public const uint CMD_BIOS_READ = 1, CMD_BIOS_WRITE = 2, OP_GPU_MODE = 0x52;
         // Four zero bytes, not an empty buffer. hpqBDataIn sizes the input from Size, so an empty one reaches
-        // the firmware as a 16 byte buffer; ACPI methods that build fields at fixed offsets then fault, and the
-        // call comes back rc 3, "unknown command". Mainline hp-wmi carries a fix for exactly this - "Resolve WMI
-        // query failures on some devices", found on an OMEN 15-ek0xxx - which pads every input instead. This was
-        // the only read Ohman made with an empty buffer, and it is the one board 8BC2 could not use: OGH reads
-        // the same command on the same machine and gets an answer.
+        // the firmware as a 16 byte buffer; ACPI methods that build fields at fixed offsets then fault. Mainline
+        // hp-wmi carries a fix for exactly this - "Resolve WMI query failures on some devices", found on an
+        // OMEN 15-ek0xxx - which pads every input instead. This was the only read Ohman made with an empty
+        // buffer, so it is worth padding on its own merits.
+        //
+        // It was NOT the board 8BC2 problem, and this comment used to say it was. The evidence for that came
+        // from the support report, which asked for 0x52 on the wrong mailbox and therefore answered "refused"
+        // on every laptop, working ones included. 8BC2 reported a graphics mode on 1.0.5 and on 1.0.6 alike:
+        // the read was never the broken half. Only the write is, and rc 6 below is what that turned out to be.
         public int GetGpuMode() { var d = Call(CMD_BIOS_READ, OP_GPU_MODE, Z4, 4); return d.Length > 0 ? (d[0] & 0x7F) : -1; }
         public void SetGpuMode(int mode) {
             try { Call(CMD_BIOS_WRITE, OP_GPU_MODE, new byte[] { (byte)(mode & 0x7F), 0, 0, 0 }, 0); }

@@ -1742,10 +1742,13 @@ namespace Ohman {
             // Asked once, and never with the driver's name as the headline: "Install PawnIO?" is a question about
             // a word nobody has seen before, which reads as a warning. The name belongs in the attribution, where
             // it is a fact about who wrote it rather than the thing being agreed to.
+            // Breadth rather than a third name: FanControl and LibreHardwareMonitor are the two anybody has heard
+            // of, and the next projects down the list are smaller than both and recognised by nobody who needed
+            // this dialog. Sixteen tools ship the same installer, and "a dozen" is the part of that worth saying.
             if (!E.S.DriverInstalledByOhman && MessageBox.Show(IsVisible ? (Window)this : null,
                     "Install the driver?\n\n"
-                    + Program.DisplayName + " downloads it from its author (namazso, pawnio.eu) and checks the signature before anything runs. "
-                    + "It is open source with 390+ stars on GitHub, and the same driver FanControl and LibreHardwareMonitor install.\n\n"
+                    + Program.DisplayName + " downloads it from its author (namazso, pawnio.eu). "
+                    + "Open source, same driver FanControl, LibreHardwareMonitor and a dozen other hardware tools install.\n\n"
                     + "You can remove it here any time you wish.",
                     Program.DisplayName, MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
             Slow(delegate { E.InstallDriver(); });

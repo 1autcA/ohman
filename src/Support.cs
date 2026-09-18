@@ -1,9 +1,9 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — the support report: everything needed to add or fix a laptop, gathered in one go.
+// Ohman: the support report: everything needed to add or fix a laptop, gathered in one go.
 //
 // This exists because the first day of reports was mostly people being asked for one more thing. Every question
-// that came up — which commands does this firmware answer, which thermal-policy version, does the keyboard
-// declare a backlight, which ACPI zone is being read, what did OMEN Gaming Hub itself decide — is answered here
+// that came up (which commands does this firmware answer, which thermal-policy version, does the keyboard
+// declare a backlight, which ACPI zone is being read, what did OMEN Gaming Hub itself decide) is answered here
 // without a second round trip. Ohman is already running elevated, so it can ask the firmware directly rather
 // than sending somebody to find a script and elevate it again.
 //
@@ -204,7 +204,7 @@ namespace Ohman {
             // Whether the map was believed, and on what evidence. Nothing is written to a controller that has
             // not recognised its own registers here, so this line is the difference between a board the EC
             // route can rescue and one where it would have been writing into the dark.
-            if (e.Ec != null) sb.AppendLine("  ec proof:    " + (e.EcVerified ? "fits — " : "REJECTED — ") + Scrub(e.EcProof));
+            if (e.Ec != null) sb.AppendLine("  ec proof:    " + (e.EcVerified ? "fits: " : "REJECTED: ") + Scrub(e.EcProof));
             sb.AppendLine("  needs:       " + (e.P != null && e.P.DriverFor != DriverFor.None ? e.P.DriverFor.ToString() : "nothing the mailbox cannot do") + "   fan route: " + e.Route);
             if (e.Cpu == null && e.Ec == null) return;
             sb.AppendLine();
@@ -260,6 +260,15 @@ namespace Ohman {
                         + "   mailbox 0x2D: " + (f != null ? (f[0] * 100) + " / " + (f[1] * 100) : "--") + "   <- these should agree; if not, the map does not fit this board");
                     sb.AppendLine("  ec control:      manual 0x" + (r.Manual >= 0 ? r.Manual.ToString("X2") : "??") + "   countdown " + (r.Countdown >= 0 ? r.Countdown + " s" : "--")
                         + "   mode 0x" + (r.Mode >= 0 ? r.Mode.ToString("X2") : "??") + "   charge " + (r.Charge >= 0 ? r.Charge.ToString() : "--"));
+                }
+                // The one thing about this controller that reading it cannot answer. Only when asked for, because
+                // everything else in this report is read-only and that is what it is advertised as.
+                if (Program.FanProbe && e.EcVerified) {
+                    sb.AppendLine();
+                    sb.AppendLine("Which register drives the fans (writes, briefly; only ever asks for more air than is already moving)");
+                    sb.Append(e.Ec.ProbeFanWrite());
+                } else if (e.EcVerified) {
+                    sb.AppendLine("  Run tools\\drivertest.cmd and answer yes to the fan test to find which register actually drives them.");
                 }
             }
         }

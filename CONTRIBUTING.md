@@ -14,7 +14,7 @@ and the firmware probes. Please don't special-case a model anywhere else.
 Two fields there are about the optional driver rather than the firmware, and both are applied whichever way a
 profile was built:
 
-- `DriverFor` says what this board's mailbox refuses and the driver can do instead — today only
+- `DriverFor` says what this board's mailbox refuses and the driver can do instead, today only
   `DriverFor.FanLevels`, and only for boards whose firmware has been seen refusing `0x2E`. It is what puts the
   "this board needs a driver" note on the Home page, so it wants an issue number in a comment beside it.
 - `Ec` is the embedded-controller register map. Being given one earns a board nothing on its own: nothing is
@@ -35,5 +35,5 @@ and read `preview\ohman.log`.
 
 Use the **Bug report** template and attach `ohman.log` (no personal data in it). If fans or temperatures
 did anything surprising, say when: the log shows whether the thermal guard engaged. If you have the driver
-installed, add `tools\drivertest.cmd` output — a temperature that looks wrong is usually answered by the one
+installed, add `tools\drivertest.cmd` output, a temperature that looks wrong is usually answered by the one
 line in it that compares the CPU's own sensor against the one Windows exposes.

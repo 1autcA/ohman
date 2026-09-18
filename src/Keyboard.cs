@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — keyboard drawing. One control renders both the small glyph on the Home page and the Keyboard page's map:
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Ohman: keyboard drawing. One control renders both the small glyph on the Home page and the Keyboard page's map:
 // flat coloured keys, nothing more. The layout is a list of keys in key units; zones follow HP's four-zone firmware
 // order (0 right, 1 middle, 2 left, 3 WASD), which is also the order of the colour table.
 using System;
@@ -87,7 +87,7 @@ namespace Ohman {
         /// <summary>Point each drawn key at the lamp that lights it. The device says which key each of its lamps is
         /// under, so the match is the hardware's own; any key the device did not name falls back to the nearest lamp by
         /// position, which is what the bounding box is for. Afterwards a key's Zone is its lamp id and the rest of the
-        /// app — selection, painting, effect frames, drawing — carries on in zone indices exactly as it does with four.</summary>
+        /// app (selection, painting, effect frames, drawing) carries on in zone indices exactly as it does with four.</summary>
         public static void BindLamps(List<KeyDef> keys, LampArray la) {
             double maxX = 0, maxY = 0;
             foreach (var k in keys) { maxX = Math.Max(maxX, k.X + k.W); maxY = Math.Max(maxY, k.Y + k.H); }

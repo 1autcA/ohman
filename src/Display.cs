@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — display helpers: panel refresh rate (Win32 display settings) and display off. No firmware involved.
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Ohman: display helpers: panel refresh rate (Win32 display settings) and display off. No firmware involved.
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;

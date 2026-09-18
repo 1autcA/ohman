@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — WPF main window (layout in the embedded Ui.xaml): a rail on the left with Home, Fans, Keyboard and
+// Ohman: WPF main window (layout in the embedded Ui.xaml): a rail on the left with Home, Fans, Keyboard and
 // Settings, one page visible at a time; the window morphs to each page's size. Also the tray icon, hotkeys and the
 // live readouts. Every size and colour here comes from the panel design.
 using System;
@@ -674,7 +674,7 @@ namespace Ohman {
                         txtDiag.Visibility = Visibility.Visible;
                         Remeasure(cur);
                         ShowToast(copied ? "Copied. Paste it into the issue, or drag support-info.txt in"
-                                         : "Saved as support-info.txt — drag it into the issue", !copied);
+                                         : "Saved as support-info.txt, drag it into the issue", !copied);
                         // Explorer first, browser second, so the issue form is the window left in front. The
                         // report is too big for a URL, so it travels as a paste or as the revealed file.
                         if (path.Length > 0)
@@ -1679,11 +1679,9 @@ namespace Ohman {
             bool installed = E.DriverInstalled;
             string title = "Hardware driver", sub, link = null, name = null;
             bool showSwitch = installed && !E.DriverBusy;
-            // What it is for, in the words of somebody who does not know what a register is. "die temperature"
-            // is the accurate name and means nothing to the person deciding whether to install a driver. Only
-            // Intel gives up its power limits and its throttle reasons to the module we carry, so on a Ryzen
-            // this promises the one thing it can actually deliver rather than three.
-            bool intel = demo || CpuRegisters.Vendor().IndexOf("Intel", StringComparison.OrdinalIgnoreCase) >= 0;
+            // In the words of somebody who does not know what a register is. Only Intel gives up its power limits
+            // and throttle reasons to the module we carry, so a Ryzen is promised the one thing it will get.
+            bool intel = demo || CpuRegisters.IsIntel;
             string gains = (intel ? "more accurate CPU temperature, power limits & throttle reasons" : "a more accurate CPU temperature")
                 + ((E.P.DriverFor & DriverFor.FanLevels) != 0 ? ", and fan levels on this board" : "");
             if (E.DriverBusy) { sub = E.DriverProgress; driverState = DriverState.Busy; }
@@ -1708,14 +1706,13 @@ namespace Ohman {
                 if (name != null) DriverSubLinked(name, sub); else txtDriverSub.Text = sub;
                 btnDriver.Text = link ?? "";
                 btnDriver.Visibility = link != null ? Visibility.Visible : Visibility.Collapsed;
-                // What it is, on the thing that starts it. Not whose it is and not what it is called: a name
-                // nobody has seen is what made the dialog read as a warning, and the row credits PawnIO by name
-                // and by link the moment it is installed, which is when the name means something.
+                // Not whose it is and not what it is called: an unfamiliar name in front of a decision is what
+                // made the old dialog read as a warning. The row credits PawnIO by link once it is installed.
                 btnDriver.ToolTip =
                     driverState == DriverState.NotInstalled || driverState == DriverState.Outdated
                         ? "Same driver FanControl, LibreHardwareMonitor and a dozen other hardware tools install. Removable any time."
                     : driverState == DriverState.Ready
-                        ? "FanControl and LibreHardwareMonitor install the same driver, so removing it affects them too. " + Program.DisplayName + " goes back to the temperature Windows reports."
+                        ? "Safe, " + Program.DisplayName + " falls back to the temperature Windows reports."
                     : null;
                 tgDriver.Visibility = showSwitch ? Visibility.Visible : Visibility.Collapsed;
             }
@@ -1752,9 +1749,8 @@ namespace Ohman {
             catch (Exception ex) { ShowToast("Cannot open " + url + ": " + ex.Message, true); }
         }
         void DriverAction() {
-            // On the state, not on the words. This used to compare btnDriver.Text against "Install", "Update"
-            // and the rest, which made the label load-bearing: rewording the row - which has happened twice
-            // already - would have disconnected the click from its action with nothing to notice it.
+            // On the state, not on the words: comparing against btnDriver.Text made the label load-bearing, and
+            // rewording the row would have disconnected the click from its action with nothing to notice it.
             if (driverState == DriverState.NotInstalled || driverState == DriverState.Outdated) InstallDriver();
             else if (driverState == DriverState.RestartPending) RestartWindows("the driver");
             else if (driverState == DriverState.Broken) DriverCheck();
@@ -1766,11 +1762,8 @@ namespace Ohman {
         void InstallDriver() {
             if (E.Hw.IsDemo) { ShowToast("Simulated hardware: nothing to install", true); return; }
             if (E.DriverBusy) return;
-            // No confirmation. Pressing Install is the consent, and asking somebody whether they meant the button
-            // they just pressed is friction that reads as a warning. Windows wants nothing here either: the app is
-            // already elevated and hands that token straight to the installer, so there is no prompt of its own to
-            // stand in for. What the dialog was for - saying which driver and whose - is better read before the
-            // press than after it, so it is on the link as a tooltip and in the progress line as it happens.
+            // No confirmation: pressing Install is the consent. Windows wants nothing here either, since the app
+            // is already elevated and hands that token to the installer. What the dialog said is on the tooltip.
             Slow(delegate { E.InstallDriver(); });
         }
         void DriverCheck() {
@@ -2025,7 +2018,7 @@ namespace Ohman {
         void PollRate() {
             // Whoever is reading these numbers sets the floor. The software fan curve steps every 5 s and steps from
             // the last reading it was given, so polling slower than that would make the fans answer a poll interval
-            // late — not a saving worth having. With nothing but the tray number waiting on them, they can wait.
+            // late, not a saving worth having. With nothing but the tray number waiting on them, they can wait.
             bool curveDrivesFans = !E.ReadOnly && (E.S.Fan == FanMode.Auto || E.S.Fan == FanMode.Custom);
             // Reading the discrete GPU means running nvidia-smi, and on a hybrid laptop that wakes a GPU which was
             // asleep in D3. Doing it on battery with the window shut costs real runtime for a number nobody is

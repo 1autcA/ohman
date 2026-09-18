@@ -1,4 +1,4 @@
-name: Verify my laptop
+﻿name: Verify my laptop
 description: You ran the checklist on your machine and want it marked verified
 title: "Verify: <model> (board XXXX)"
 labels: ["verification"]
@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you — this is the most useful thing anyone can contribute.
+        Thank you, this is the most useful thing anyone can contribute.
         The checklist is in [docs/laptops.md](https://github.com/P4R1H/Ohman/blob/main/docs/laptops.md#verifying-your-laptop).
         Run `tools\support-info.cmd` first; it writes `tools\support-info.txt` with no personal data in it.
   - type: input
@@ -70,6 +70,6 @@ body:
       description: >
         Install the driver from Settings, then run tools\drivertest.cmd. It is read-only. This is what tells us
         whether the CPU's own temperature sensor answers on your chip, and whether your embedded controller is
-        laid out the way we think it is — which decides whether boards like yours can ever have their fans
+        laid out the way we think it is, which decides whether boards like yours can ever have their fans
         driven when the firmware refuses.
       render: text

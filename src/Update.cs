@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — the update path: ask GitHub for the newest release of the project's own repository, download its
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Ohman: the update path: ask GitHub for the newest release of the project's own repository, download its
 // Ohman.exe beside the running one, and on request put it in place of the running one and hand over to it.
 // Nothing is sent but the requests themselves; no identifiers, no telemetry. Checked at most once a day.
 using System;
@@ -268,7 +268,7 @@ namespace Ohman {
             return i < parts.Length && int.TryParse(new string(Array.FindAll(parts[i].ToCharArray(), char.IsDigit)), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? n : 0;
         }
 
-        /// <summary>"3 days ago", "2 hours ago", "just now" — the design's phrasing for the last check.</summary>
+        /// <summary>"3 days ago", "2 hours ago", "just now", the design's phrasing for the last check.</summary>
         public static string Ago(DateTime when) {
             if (when == DateTime.MinValue) return "never checked";
             var d = DateTime.Now - when;

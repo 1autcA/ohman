@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — entry point.
+// Ohman: entry point.
 //   Ohman.exe                 normal start (elevated build asks for UAC once)
 //   Ohman.exe --hidden        start minimised to the tray (used by the autostart task)
 //   Ohman.exe --demo          force simulated hardware
@@ -8,6 +8,7 @@
 //   Ohman.exe --screenshot f.png [--settings]   render the window to a PNG and exit (UI preview)
 //   Ohman.exe --lamps        list the HID lighting devices this machine has and exit (read-only; support data)
 //   Ohman.exe --driver       what the PawnIO driver, the CPU registers and the EC say on this machine (read-only; tools\drivertest.cmd)
+//   Ohman.exe --driver --fantest   the same, and then briefly raise the fans to find which EC register drives them
 //   Ohman.exe --updated      started by the build it replaced: waits for that one to let go, then cleans it up
 using System;
 using System.Security.Principal;
@@ -37,6 +38,7 @@ namespace Ohman {
         public static bool FlashTest;                         // --flash: show the key OSD at start (preview/screenshot aid)
         public static bool KeyboardTest;                      // --keyboard: open the keyboard page at start (screenshot aid)
         public static string StartPage = "";                  // --page home|fans|keyboard|settings|update|driver
+        public static bool FanProbe;                          // --fantest with --driver: also find which EC register drives the fans
 
         [STAThread]
         public static int Main(string[] args) {
@@ -59,6 +61,7 @@ namespace Ohman {
             // Before the single-instance guard, like --lamps: with Ohman already running, anything after it
             // just signals the live window and exits, which made this silently do nothing.
             foreach (string a0 in args) if (a0.ToLowerInvariant() == "--support") return WriteSupport(args);
+            foreach (string a0 in args) if (a0.ToLowerInvariant() == "--fantest") FanProbe = true;
             foreach (string a0 in args) if (a0.ToLowerInvariant() == "--driver") return WriteDriverReport(args);
             for (int i = 0; i + 1 < args.Length; i++)
                 if (args[i].ToLowerInvariant() == "--make-ico") { MainWindow.WriteIco(args[i + 1], Ui.BalColor); return 0; }   // build aid: writes the app icon
@@ -213,7 +216,7 @@ namespace Ohman {
             Action<string> say = delegate(string s) { Console.WriteLine(s); Log.Write("lamps| " + s); };
             var all = Hid.Enumerate();
             int lighting = 0;
-            say(AppName + " " + Version + " — HID lighting devices");
+            say(AppName + " " + Version + ": HID lighting devices");
             say(all.Count + " HID collections present");
             foreach (var info in all) {
                 if (info.UsagePage != LampArray.UsagePageLighting) continue;

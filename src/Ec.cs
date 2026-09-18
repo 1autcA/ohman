@@ -1,29 +1,26 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — the embedded controller, through the driver.
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Ohman: the embedded controller, through the driver.
 //
 // The EC is the chip that actually runs the fans; the WMI mailbox is the firmware relaying requests to it. On
 // most boards the relay works and this file is only ever read from. On a few it refuses fan levels outright
 // (878A answers rc 46 forever), and there the only way to the fans is the EC's own registers, reached through
 // ports 0x62 and 0x66 with the handshake the ACPI specification describes (section 12, "Embedded Controller").
 //
-// Two things this file is careful about, both learned from other people's bug reports:
-//  * The register map is per generation, not per vendor. The 2025 OMEN MAX boards lay the EC out differently,
-//    and writing the classic addresses to them corrupts EC state until the Caps Lock LED blinks in panic
-//    (OmenCore issue #60). So there is no default map: a profile either carries one, with its evidence, or
-//    this class is never constructed for that board. Writes are further limited to the map's own short list.
+// Two things this file is careful about, both from other people's bug reports:
+//  * Writing the classic addresses on a 2025 OMEN MAX corrupts EC state until the Caps Lock LED blinks in panic
+//    (OmenCore issue #60), so those boards get no map at all and writes are limited to the map's own list.
 //  * The EC also answers the battery, the lid and the keyboard. Flood it and its ACPI transactions time out
-//    (Event 13), Windows loses the battery reading and runs the critical-battery action - a shutdown, on a
-//    plugged-in laptop (OmenCore 2.8.6). So every wait here is bounded, identical writes are not repeated, and
-//    a controller that times out repeatedly is left alone for a while.
+//    (Event 13), Windows loses the battery reading and runs the critical-battery action, which is a shutdown on
+//    a plugged-in laptop (OmenCore 2.8.6). So every wait is bounded and a controller that times out is left be.
 //
-// The map itself is OmenMon's (Hardware/EcData.cs), which agrees with omen-fan's probes and OmenCore's code:
-// 0x34/0x35 set each fan in rpm/100, 0x62 hands manual control to the caller with 0x06 and back with 0x00,
-// 0x63 is the countdown in seconds after which the EC takes the fans back - the 120 s expiry the mailbox path
-// keeps alive with the 0x10 query is this byte counting down.
+// The map is OmenMon's (Hardware/EcData.cs), agreeing with omen-fan's probes and OmenCore's code: 0x34/0x35 set
+// each fan in rpm/100, 0x62 hands manual control over with 0x06 and back with 0x00, and 0x63 is the countdown
+// after which the EC takes the fans back, which is the 120 s expiry the mailbox path keeps alive with 0x10.
 using System;
 using System.Collections.Generic;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Text;
 using System.Threading;
 
 namespace Ohman {
@@ -54,12 +51,27 @@ namespace Ohman {
         public byte CpuTemp = 0x57, GpuTemp = 0xB7;                 // CPUT, GPTM: degrees C
         public byte Rpm1 = 0xB0, Rpm2 = 0xB2;                       // RPM1/2, RPM3/4: 16-bit little-endian rpm per fan
         public byte FanSet1 = 0x34, FanSet2 = 0x35;                 // SRP1, SRP2: rpm/100, the mailbox's own unit
+        public byte FanSetPct1 = 0x2C, FanSetPct2 = 0x2D;           // XSS1, XSS2: the same thing as a percentage
+        /// <summary>Which pair actually drives the fans here. Both exist on every HP board anyone has looked at,
+        /// only one is wired to anything, and which one is a per-model fact: NBFC's community configs have HP
+        /// laptops of the same year using each. Only ProbeFanWrite can answer it, so only it sets this.</summary>
+        public bool UsePercent;
         public byte Manual = 0x62, ManualOn = 0x06, ManualOff = 0x00;   // OMCC
         public byte Countdown = 0x63, CountdownDefault = 0x78, CountdownHold = 0xFF;   // XFCD, seconds
         public byte Mode = 0x95, Charge = 0x96;                     // HPCM, XBCH: read for the report only
-        /// <summary>The registers a write may touch at all. Everything else is refused in code, whatever the caller.</summary>
-        public byte[] Writable { get { return new byte[] { FanSet1, FanSet2, Manual, Countdown }; } }
-        public bool MayWrite(byte reg) { foreach (byte w in Writable) if (w == reg) return true; return false; }
+        byte[] writable;
+        /// <summary>Every register a write may touch. Anything else is refused in code, whatever the caller.</summary>
+        public bool MayWrite(byte reg) {
+            if (writable == null) writable = new byte[] { FanSet1, FanSet2, FanSetPct1, FanSetPct2, Manual, Countdown };
+            foreach (byte w in writable) if (w == reg) return true;
+            return false;
+        }
+        /// <summary>A fan level in the mailbox's unit (rpm/100) as this board's registers want it.</summary>
+        public byte Encode(int level, int ceiling) {
+            if (level <= 0) return 0;
+            if (!UsePercent) return (byte)Math.Min(255, level);
+            return (byte)Math.Max(0, Math.Min(100, (int)Math.Round(100.0 * level / Math.Max(1, ceiling))));
+        }
 
         /// <summary>The 2018–2022 OMEN layout: OmenMon (developed on 8A14), omen-fan (16-c0140AX), OmenCore
         /// (8574 fan control confirmed in the field). Not the 2025 OMEN MAX, whose layout differs.</summary>
@@ -173,6 +185,9 @@ namespace Ohman {
         // ---------- what callers use ----------
         public bool ReadByte(byte reg, out byte value) { byte v = 0; bool ok = Locked(delegate { return ReadRaw(reg, out v); }, "read 0x" + reg.ToString("X2")); value = v; return ok; }
 
+        /// <summary>Forget what was written, so the next write is sent whatever it is.</summary>
+        void Forget() { lastWritten.Clear(); }
+
         /// <summary>A write, to a register on the map's own list only. Repeating a value the register already
         /// holds is skipped for five seconds: the fan path calls every tick and the EC does not need telling twice.</summary>
         public bool WriteByte(byte reg, byte value) {
@@ -210,10 +225,11 @@ namespace Ohman {
         /// first and read back after: a controller that does not keep 0x06 in the manual register is not one this
         /// map fits, and the caller must stop using it. The countdown is set to its maximum so the hold outlives
         /// the caller's own 5 s tick many times over; the caller still calls every tick, and a repeat is free.</summary>
-        public bool HoldFans(int level1, int level2) {
-            byte l1 = (byte)Math.Max(0, Math.Min(255, level1)), l2 = (byte)Math.Max(0, Math.Min(255, level2));
+        public bool HoldFans(int level1, int level2, int ceiling) {
+            byte l1 = Map.Encode(level1, ceiling), l2 = Map.Encode(level2, ceiling);
+            byte r1 = Map.UsePercent ? Map.FanSetPct1 : Map.FanSet1, r2 = Map.UsePercent ? Map.FanSetPct2 : Map.FanSet2;
             if (!WriteByte(Map.Manual, Map.ManualOn)) return false;
-            if (!WriteByte(Map.FanSet1, l1) || !WriteByte(Map.FanSet2, l2)) return false;
+            if (!WriteByte(r1, l1) || !WriteByte(r2, l2)) return false;
             if (!WriteByte(Map.Countdown, Map.CountdownHold)) return false;
             byte check;
             if (!ReadByte(Map.Manual, out check)) return false;
@@ -224,17 +240,63 @@ namespace Ohman {
         /// <summary>Hand the fans back: levels cleared, manual off, countdown at the firmware's own default so
         /// it resumes its curve on the next tick of its clock. omen-fan's restore sequence.</summary>
         public bool ReleaseFans() {
-            lastWritten.Clear();                        // the point is to write these whatever we wrote last
-            // Control first, levels second. The other way round - which is how this was written - leaves the
-            // controller in manual mode holding zero if the write that hands control back is the one that fails,
-            // and both fans stop on a machine Ohman is in the middle of quitting. Any write here can fail: the
-            // shared lock can be held by another tool for longer than we wait for it, and the EC can time out.
-            // This order means a failure part way through leaves stale levels nothing is reading any more.
+            Forget();
+            // Control first, levels second. Any write here can fail, and the other way round a failure on the
+            // one that hands control back leaves the controller in manual mode holding zero, which is both fans
+            // stopped on a machine Ohman is quitting. This order leaves stale levels nothing is reading.
             bool ok = WriteByte(Map.Manual, Map.ManualOff);
             ok &= WriteByte(Map.Countdown, Map.CountdownDefault);
             ok &= WriteByte(Map.FanSet1, 0);
             ok &= WriteByte(Map.FanSet2, 0);
+            ok &= WriteByte(Map.FanSetPct1, 0);
+            ok &= WriteByte(Map.FanSetPct2, 0);
             return ok;
+        }
+
+        /// <summary>Which register pair drives the fans here, found by driving them. Everything else about this
+        /// controller can be checked by reading it; this cannot, because both pairs accept a write and only one
+        /// is connected. Only ever asks for more air than is already moving, and hands the fans back in a
+        /// finally whatever happens. Fifteen seconds.</summary>
+        public string ProbeFanWrite() {
+            var sb = new StringBuilder();
+            int rest = AverageRpm();
+            if (rest < 0) return "  the tachometers did not answer, so there is nothing to measure a change against\n";
+            sb.AppendLine("  fans at rest:    " + rest + " rpm");
+            if (rest > 4200) sb.AppendLine("  NOTE: the fans are already fast, so a rise may not be visible. Run this on an idle machine.");
+            try {
+                for (int pass = 0; pass < 2; pass++) {
+                    bool pct = pass == 1;
+                    byte r1 = pct ? Map.FanSetPct1 : Map.FanSet1, r2 = pct ? Map.FanSetPct2 : Map.FanSet2;
+                    byte v = pct ? (byte)80 : (byte)50;
+                    string what = "0x" + r1.ToString("X2") + "/0x" + r2.ToString("X2") + " = " + v + (pct ? "%" : " (rpm/100)");
+                    Forget();
+                    if (!(WriteByte(Map.Manual, Map.ManualOn) && WriteByte(Map.Countdown, Map.CountdownHold)
+                        && WriteByte(r1, v) && WriteByte(r2, v))) {
+                        sb.AppendLine("  " + what.PadRight(27) + "the write was refused (" + LastError + ")");
+                        continue;
+                    }
+                    Thread.Sleep(5000);
+                    int now = AverageRpm();
+                    int rise = now - rest;
+                    sb.AppendLine("  " + what.PadRight(27) + now + " rpm, " + (rise >= 0 ? "+" : "") + rise
+                        + (rise > 400 ? "   <-- this pair drives the fans on this board" : "   no change"));
+                    ReleaseFans();      // not zero-with-manual-on, which is a stopped fan
+                    Thread.Sleep(2500);
+                }
+            } finally {
+                if (ReleaseFans()) sb.AppendLine("  fans handed back to the controller.");
+                else sb.AppendLine("  COULD NOT hand the fans back: " + LastError + ". Restart the machine if they sound wrong.");
+            }
+            return sb.ToString();
+        }
+        int AverageRpm() {
+            int sum = 0, n = 0;
+            for (int i = 0; i < 3; i++) {
+                EcReading r = Read();
+                if (r.Rpm1 >= 0) { sum += r.Rpm1; n++; }
+                Thread.Sleep(400);
+            }
+            return n > 0 ? sum / n : -1;
         }
 
         /// <summary>Does this controller actually follow the map? Asked once, on the machine, before anything is

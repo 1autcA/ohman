@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — raw HID, and the HID Lighting And Illumination ("LampArray") interface on top of it.
+// Ohman: raw HID, and the HID Lighting And Illumination ("LampArray") interface on top of it.
 //
 // Why this file exists: HP's BIOS mailbox cannot light a per-key keyboard. On those machines the firmware still
 // answers every 0x20009 call and drives nothing (see docs/research.md, "Per-key keyboards"), because 128 bytes
@@ -7,7 +7,7 @@
 //
 // Of the two ways in, this is the published one: HID usage page 0x59, the same interface Windows Dynamic Lighting
 // speaks, standardised by the USB-IF and implemented by the keyboard itself. It needs no reverse engineering, no
-// administrator rights, and no per-model table — the device reports how many lamps it has, where each one is, and
+// administrator rights, and no per-model table, the device reports how many lamps it has, where each one is, and
 // which key each one sits under. The alternative, a vendor MCU protocol on a second interface, is documented for
 // exactly one keyboard and would need a hand-written 176-entry map; it is not worth the blast radius.
 //
@@ -200,17 +200,17 @@ namespace Ohman {
             var found = new List<LampArray>();
             foreach (var info in Hid.Enumerate()) {
                 if (info.UsagePage != UsagePageLighting || info.Usage != UsageLampArray) continue;
-                if (info.FeatureLen < 24) { Log.Write("lamparray: " + info + " — feature report too short, skipped"); continue; }
+                if (info.FeatureLen < 24) { Log.Write("lamparray: " + info + ": feature report too short, skipped"); continue; }
                 IntPtr h = Hid.Open(info.Path);
-                if (h == Hid.Invalid) { Log.Write("lamparray: " + info + " — cannot open"); continue; }
+                if (h == Hid.Invalid) { Log.Write("lamparray: " + info + ": cannot open"); continue; }
                 try {
                     var attrs = new byte[info.FeatureLen];
                     attrs[0] = RepAttributes;
-                    if (!Hid.GetFeature(h, attrs)) { Log.Write("lamparray: " + info + " — attributes report refused"); Hid.CloseHandle(h); continue; }
+                    if (!Hid.GetFeature(h, attrs)) { Log.Write("lamparray: " + info + ": attributes report refused"); Hid.CloseHandle(h); continue; }
                     var la = new LampArray(h, info, attrs);
                     Log.Write("lamparray: " + info + " -> " + la.Describe);
                     found.Add(la);
-                } catch (Exception ex) { Log.Write("lamparray: " + info + " — " + ex.Message); Hid.CloseHandle(h); }
+                } catch (Exception ex) { Log.Write("lamparray: " + info + ": " + ex.Message); Hid.CloseHandle(h); }
             }
             return found;
         }
@@ -331,7 +331,7 @@ namespace Ohman {
     }
 
     /// <summary>A per-key keyboard driven over HID, presented to the rest of the app as an ordinary lighting device
-    /// with one "zone" per lamp. Everything downstream — selection, painting, the effect frames, the drawing — already
+    /// with one "zone" per lamp. Everything downstream (selection, painting, the effect frames, the drawing) already
     /// works in zone indices and needs no change; the keyboard page just has 100-odd of them instead of four.</summary>
     public sealed class PerKeyLighting : ILighting {
         readonly LampArray lamps;

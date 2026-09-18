@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — extra sensors that do not need the BIOS: ACPI thermal zone + CPU utilisation (perf counters)
+// Ohman: extra sensors that do not need the BIOS: ACPI thermal zone + CPU utilisation (perf counters)
 // and NVIDIA GPU stats via nvidia-smi. All reads are best-effort and never throw.
 using System;
 using System.Collections.Generic;
@@ -119,12 +119,10 @@ namespace Ohman {
             while (!stop) {
                 wake.Reset();
                 var s = new SensorSnapshot();
-                // The die is read first, at the top of the tick, a whole interval after this thread last did
-                // anything at all. It answers in under a millisecond and takes a few hundred to settle, so read
-                // *after* the performance counters below - which are a perflib round trip, not free - what comes
-                // back is the thermal transient our own measurement just caused. Measured on the reference
-                // machine: a median of 68 read that way against a floor of 55 read free-running, with single
-                // samples at 95 and above. Nothing else in this loop cares what order it runs in. This does.
+                // The die is read first, a whole interval after this thread last did anything. It answers in under
+                // a millisecond and takes a few hundred to settle, so read after the performance counters below,
+                // which are a perflib round trip and not free, it reports the transient our own measurement just
+                // caused: measured, a median of 68 that way against a floor of 55 free-running.
                 double driverWatts = double.NaN, die = double.NaN;
                 CpuRegisters cpu = CpuSource == null ? null : CpuSource();
                 if (cpu != null) {
@@ -190,18 +188,11 @@ namespace Ohman {
             }
         }
 
-        /// <summary>Three readings, middle one wins.
-        ///
-        /// A temperature is only worth acting on if it is still there a moment later. The die reacts to any work
-        /// on the machine within a millisecond and takes a few hundred to settle, so about one reading a minute
-        /// lands inside somebody else's burst - measured: 3 of 64 samples at or above 90 while the floor was 55.
-        /// One of those was enough to drive the fans up and to engage the thermal guard, which then could not
-        /// release, because release needs sixty consecutive cool seconds and the next spike was always sooner.
-        ///
-        /// The median costs nothing: no extra reads, no extra wakeups, no lag on anything real. A lone spike can
-        /// never be the middle of three, and a genuine climb is in all three within two ticks - far quicker than
-        /// the fans can answer it anyway. Applied to the ACPI zone too, where it changes nothing: that sensor is
-        /// already slow, which is exactly why nobody noticed this until the die replaced it.</summary>
+        /// <summary>Three readings, middle one wins. A temperature is worth acting on only if it is still there a
+        /// moment later: about one reading a minute lands inside somebody else's burst of work (measured: 3 of 64
+        /// samples at or above 90 while the floor was 55), and one of those was enough to drive the fans up and
+        /// latch the thermal guard. Costs no extra reads and no extra wakeups, and a real climb is in all three
+        /// within two ticks. Applied to the ACPI zone too, where it changes nothing.</summary>
         readonly double[] recent = new double[3];
         int recentCount;
         double Steady(double now) {

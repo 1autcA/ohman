@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — the look: the palette, the fonts that ship inside the exe, the animation curves, and the one
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Ohman: the look: the palette, the fonts that ship inside the exe, the animation curves, and the one
 // accent colour every control shares. Nothing here knows about the window or the hardware.
 using System;
 using System.Collections.Generic;
@@ -131,7 +131,7 @@ namespace Ohman {
         }
         /// <summary>A lightly under-damped spring over t in 0..1: quick start, ~2 % overshoot, settled by the end.</summary>
         public static double Spring(double t) { const double a = 6.5, b = 5.5; return 1 - Math.Exp(-a * t) * (Math.Cos(b * t) + a / b * Math.Sin(b * t)); }
-        /// <summary>Ease-out quint: fast, then a long settle, and never past the target — what a resizing window wants.</summary>
+        /// <summary>Ease-out quint: fast, then a long settle, and never past the target, what a resizing window wants.</summary>
         public static double EaseOut(double t) { double u = 1 - Math.Max(0, Math.Min(1, t)); return 1 - u * u * u * u * u; }
 
         public static Rgb Hsl(double h, double s, double l) {

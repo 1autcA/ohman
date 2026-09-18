@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — control engine: settings, apply logic, keep-alive heartbeat, OMEN key watcher, OGH suppression.
+// Ohman: control engine: settings, apply logic, keep-alive heartbeat, OMEN key watcher, OGH suppression.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,7 +14,7 @@ namespace Ohman {
 
     public enum FanMode { Auto = 0, Max = 1, Manual = 2, Custom = 3 }   // Custom = the user's own curve, per mode
     public enum KeyAction { Cycle = 0, Show = 1, MaxFan = 2, Off = 3, Run = 4 }
-    public enum GpuLevel { Base = 0, Boost = 1, Max = 2 }   // {cTGP,PPAB} = {0,0} / {0,1} / {1,1} — the three payloads OGH sends
+    public enum GpuLevel { Base = 0, Boost = 1, Max = 2 }   // {cTGP,PPAB} = {0,0} / {0,1} / {1,1}, the three payloads OGH sends
 
     /// <summary>Fan, power-gain and GPU choices are remembered per performance mode (like tabs): switching to a mode applies its own set.</summary>
     public sealed class ModeProfile {
@@ -676,7 +676,7 @@ namespace Ohman {
         void Changed() { var h = StateChanged; if (h != null) { try { h(); } catch { } } }
         /// <summary>A line for the user. Only for things they did not just ask for: the guard, a battery switch, an
         /// update result. Echoing a change back at the person who made it is noise, so every "announce" from a
-        /// button, menu item or hotkey is false — the control they used already shows the new state.</summary>
+        /// button, menu item or hotkey is false, the control they used already shows the new state.</summary>
         void Say(string m) { Log.Write(m); Fire(Toast, m, false); }
 
         public void ApplyAll(bool announce) {
@@ -753,7 +753,7 @@ namespace Ohman {
         int ecFailures;
         bool WriteLevelsEc(int l1, int l2, string what) {
             if (Ec == null) { Route = FanRoute.Mailbox; return false; }
-            if (Ec.HoldFans(l1, l2)) { curLevel1 = l1; curLevel2 = l2; ecFailures = 0; LastError = ""; return true; }
+            if (Ec.HoldFans(l1, l2, P.Curve.Ceiling)) { curLevel1 = l1; curLevel2 = l2; ecFailures = 0; LastError = ""; return true; }
             ecFailures++;
             LastError = Ec.LastError;
             Log.Write("FAIL " + what + " via EC: " + Ec.LastError);
@@ -810,17 +810,16 @@ namespace Ohman {
                 PawnIoModule m = PawnIo.Open("LpcACPIEC", out why);
                 if (m == null) Log.Write("driver: EC module unavailable: " + why);
                 else {
-                    // Nothing is written to this controller until it has recognised its own registers here. The
-                    // firmware's fan speeds and the CPU's own temperature are both already in hand, so the map
-                    // can be checked against two independent readings of the same machine rather than against a
-                    // list of board ids somebody once wrote down.
+                    // Nothing is written until the controller has recognised its own registers here, checked
+                    // against two readings of this machine we already have: the firmware's fan speeds and the
+                    // CPU's own temperature.
                     var ec = new EmbeddedController(new PawnIoEcPorts(m), P.Ec);
                     int[] rpm = null;
                     double die = double.NaN;
                     try { rpm = Hw.GetFanLevels(); } catch { }
                     try { if (Cpu != null) die = Cpu.Poll().DieTemp; } catch { }
                     ecVerified = ec.Verify(rpm, die, out EcProof);
-                    Log.Write("driver: the EC map " + (ecVerified ? "fits this board — " : "does NOT fit this board — ") + EcProof);
+                    Log.Write("driver: the EC map " + (ecVerified ? "fits this board: " : "does NOT fit this board: ") + EcProof);
                     Ec = ec;
                 }
             }
@@ -841,10 +840,8 @@ namespace Ohman {
             bool need = (P.DriverFor & DriverFor.FanLevels) != 0 || fanLevelsRefused;
             FanRoute was = Route;
             Route = (Ec != null && ecVerified && need && !Ec.Resting) ? FanRoute.Ec : FanRoute.Mailbox;
-            // A route that has just taken over starts with a clean slate. fanWriteFailures counts what the
-            // mailbox refused, and AutoTick backs off to once a minute once it reaches three - which on the one
-            // board this route exists for is permanently, so the curve would answer a temperature change once a
-            // minute for the rest of the session on the machine the route was written to rescue.
+            // A route taking over starts clean: fanWriteFailures counts mailbox refusals, and three of them back
+            // AutoTick off to once a minute, which on the one board this route rescues is permanent.
             if (Route == FanRoute.Ec && was != FanRoute.Ec) { fanWriteFailures = 0; fanFailureShown = false; }
             return Route;
         }
@@ -867,7 +864,7 @@ namespace Ohman {
         public void InstallDriver() {
             if (DriverBusy) return;
             DriverBusy = true;
-            DriverProgress = "starting…";
+            DriverProgress = "Starting…";
             if (!S.DriverUse) { S.DriverUse = true; S.Save(); }      // asking for it is switching it on
             Changed();
             try {
@@ -906,7 +903,7 @@ namespace Ohman {
         public bool RemoveDriver() {
             if (DriverBusy) return false;
             DriverBusy = true;
-            DriverProgress = "removing…";
+            DriverProgress = "Removing…";
             Changed();
             try {
                 lock (applySync) {
@@ -916,10 +913,8 @@ namespace Ohman {
                 string error;
                 bool ok = PawnIo.Uninstall(out error);
                 if (ok) { S.DriverInstalledByOhman = false; S.DriverRestartPending = false; S.Save(); }
-                // Either way, re-read the machine rather than assume what the uninstaller left behind. InitDriver
-                // is what refreshes the version the row reads, and skipping it on the path that succeeded left
-                // the row holding a version of a driver that was no longer there: it decided the driver was
-                // installed but unopenable, and offered to troubleshoot a removal that had worked.
+                // Either way, re-read the machine. InitDriver refreshes the version the row reads, and skipping it
+                // on the path that succeeded left the row offering to troubleshoot a removal that had worked.
                 InitDriver();
                 if (ok) Say("Driver removed");
                 else { DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); }
@@ -1185,14 +1180,10 @@ namespace Ohman {
                 bool chassisUsable = P.Verified || chassisScaleKnown;
                 bool hot = (cpuKnown && t >= P.Guard.CpuHot) || (chassisUsable && c >= P.Guard.ChassisHot);
                 bool stalled = cpuKnown && t >= P.Guard.StallCpu && f[0] >= 0 && f[1] >= 0 && (f[0] + f[1]) < P.Guard.StallLevelSum;
-                // Two ticks, not one. What engages this is a reading of a sensor that answers in microseconds,
-                // and one sample landing inside a spike was enough to force maximum fan on an idle laptop -
-                // three times in one evening on the reference machine, and the third would not release, because
-                // release needs sixty consecutive cool seconds and the next spike always came first. Sensors
-                // hands over the median of three readings now, so this is the second layer rather than the only
-                // one. Twenty seconds is still far inside the time the chips take to come to harm, and they
-                // throttle themselves long before that; what this guard is really for is a chassis heating up
-                // and fans that have stopped, neither of which happens in ten seconds.
+                // Two ticks, not one: a single sample landing inside a spike used to force maximum fan on an idle
+                // laptop, three times in one evening. Sensors hands over a median now, so this is the second
+                // layer rather than the only one. Twenty seconds costs nothing, since the chips throttle
+                // themselves long before they come to harm and the chassis this guards does not heat up in ten.
                 if (hot || stalled) guardHotTicks++; else guardHotTicks = 0;
                 if ((hot || stalled) && !GuardActive && guardHotTicks >= 2) {
                     GuardActive = true;
@@ -1494,7 +1485,7 @@ namespace Ohman {
             sb.AppendLine("lighting: " + (Light == null ? "none" : Light.Describe + " mode=" + S.Light + " level=" + S.LightLevel + " colours=" + S.LightColors + " windowsControl=" + WinLighting.HasControl));
             sb.AppendLine("fan drive: written " + curLevel1 + "/" + curLevel2 + "  cpu " + Fmt(CpuTemp) + " (last single reading " + Fmt(CpuTempNow) + ")  gpu " + Fmt(GpuTemp) + "  ir " + Fmt(IrTemp) + "  guard=" + GuardActive + "  writeFailures=" + fanWriteFailures + "  route=" + Route);
             sb.AppendLine("driver: " + (DriverReady ? "PawnIO " + (Hw.IsDemo ? "simulated" : "" + DriverVersion) + " · cpu " + (Cpu != null ? Cpu.Describe : "none")
-                + " · ec " + (Ec == null ? "none" : (ecVerified ? Ec.Map.Name : "map rejected") + (Ec.Resting ? " (resting)" : "") + " — " + EcProof) : "none (" + DriverWhy + ")"));
+                + " · ec " + (Ec == null ? "none" : (ecVerified ? Ec.Map.Name : "map rejected") + (Ec.Resting ? " (resting)" : "") + " u{00B7} " + EcProof) : "none (" + DriverWhy + ")"));
             sb.AppendLine("last heartbeat: " + (LastHeartbeat == DateTime.MinValue ? "never" : LastHeartbeat.ToString("HH:mm:ss")) + "   last key event: " + (LastEventTime == DateTime.MinValue ? "none" : LastEventId + "/" + LastEventData + " at " + LastEventTime.ToString("HH:mm:ss")));
             return sb.ToString();
         }

@@ -141,25 +141,25 @@ Same mailbox, second command id. Layout from OGH's own lighting module (`HP.Omen
 Keyboard type `3` reports "per-key RGB" and keeps answering `0x20009/0x02..0x05`, but **nothing it is told
 reaches the hardware**. Reported independently by owners of an OMEN 17-ck, board `88FE` and a Transcend 16,
 and stated by OmenMon's maintainer: the whole four-zone colour and backlight interface is there, and it does
-not control anything. It could not work anyway — 128 bytes cannot address 176 LEDs.
+not control anything. It could not work anyway, 128 bytes cannot address 176 LEDs.
 
 Ohman therefore treats type 3 as `ILighting.Inert`: the keyboard is drawn, our own modes are greyed out, and
 Windows Dynamic Lighting (which talks to the keyboard directly) is offered instead.
 
 The real interface is the keyboard's own USB HID device. Two pieces of it are known:
 
-**2025 boards (OMEN MAX class) — documented, two independent implementations that agree byte for byte.**
+**2025 boards (OMEN MAX class), documented, two independent implementations that agree byte for byte.**
 Device `VID_0D62 PID_54BF`, Darfon "HP Gaming Keyboard II"; the lighting lives on interface `MI_03`, which has
 a 65-byte output report. Report byte 0 is the report id and is stripped, so the 64 wire bytes are
 `[cmd][index][bLen lo][bLen hi][60-byte payload]` (the MCU ignores `bLen`). Commands: `0x09 {01}` select the
 static map, `0x05`/`0x06`/`0x07` write the R/G/B channels as three 60-byte pages each, `0x0A {AC 53}` commits
 to flash, `0x03` installs one of twelve device-side animations, `0x83` reads the effect record back. Every
-frame is acked `EC AC` (parsed) or `EC FA` (refused) — an ack does not mean anything lit. 180 slots, 176 real
+frame is acked `EC AC` (parsed) or `EC FA` (refused), an ack does not mean anything lit. 180 slots, 176 real
 LEDs, 176–179 padding; index order is contiguous physical raster order with the numpad interleaved per row.
 `0x0A` is a real flash write and must never run per animation frame. Sources: `theantipopau/omencore`
 (`DojoKeyboardMcu.cs`, MIT, from a decompile of OGH's `McuSDK2.dll` plus a USB capture on board `8D87`) and
 `arfelious/omen-rgb-linux` (`driver.py` + `data/keys.json`, GPL-3.0). Both were read as evidence; neither was
-copied — this file is the protocol, and the code here was written from it. They cross-confirm the numbering: one predicts LEDs 137, 138 and 146 are the `.` key and
+copied, this file is the protocol, and the code here was written from it. They cross-confirm the numbering: one predicts LEDs 137, 138 and 146 are the `.` key and
 the last cell of right shift; the other's independently-built map says exactly that.
 
 The same device also exposes `MI_04` as a **standard HID LampArray** (usage page `0x59`): 120 lamps, each
@@ -218,10 +218,10 @@ Recorded so nobody spends another evening on it. `MasonDye/OmenXHub` took this a
 our side:
 
 - Scanning `hpqBIntM` across commands `0x2000C`–`0x20020`, every cmdType, returns `rc = 0x3`, invalid command.
-  That BIOS implements only `0x20008` (system and design data) and `0x20009` (keyboard and lighting) — the two
+  That BIOS implements only `0x20008` (system and design data) and `0x20009` (keyboard and lighting), the two
   Ohman already drives. **There is no charge-limit command in the mailbox to find.**
 - myHP does not use the mailbox for this. It goes through WinRT, `HP.AppFramework.PowerManagerClient`, whose
-  implementation is inside `HP.HPX.dll` — 198 MB of CoreRT AOT with ~340k functions, which ILSpy cannot
+  implementation is inside `HP.HPX.dll`, 198 MB of CoreRT AOT with ~340k functions, which ILSpy cannot
   decompile. Activating `BatteryParticulars` from outside the package fails with `E_INVALIDARG`, because the
   class is gated on UWP package identity.
 - Writing HP's own feature flags (`HKLM\SOFTWARE\HP\HP App\SysControl\BatteryExtenderMode\Enabled`, and the
@@ -229,7 +229,7 @@ our side:
 
 The only path left is writing EC registers directly, which needs a kernel driver to reach port I/O. That is
 exactly the thing Ohman does not have and does not want: one executable, no driver, no service. So this is not
-a gap in our coverage, it is out of scope by construction — and if a laptop's own vendor app does not offer
+a gap in our coverage, it is out of scope by construction, and if a laptop's own vendor app does not offer
 the setting, its firmware very likely does not implement it either.
 
 ## Measured: what the app itself costs (2026-09-13)
@@ -307,7 +307,7 @@ mailbox after three such failures. Release is omen-fan's sequence: levels 0, `OM
 mailbox's max-fan flag (0x27) is left in charge of max fan and of the thermal guard: it works on these boards.
 
 **Where the map is trusted: nowhere, until it proves itself.** The first version of this decided from the hex
-prefix of the board id — every published map was made on an 84xx–8Bxx board (OmenMon on 8A14, omen-fan on a
+prefix of the board id, every published map was made on an 84xx–8Bxx board (OmenMon on 8A14, omen-fan on a
 16-c0xxx, OmenCore's field report on 8574), so those were in and everything later was out. That is a guess
 about what a number near another number means, and it was wrong in both directions: too generous, because it
 handed the map to ninety boards nobody had touched, and too mean, because the 2024 Transcend 14 turns out to
@@ -316,8 +316,7 @@ follow it exactly.
 So the map is now checked on the machine, in `EmbeddedController.Verify`, before a single byte is written
 anywhere. Four questions, cheapest first:
 
-- `OMCC` is a two-valued register. If it holds anything but `0x00` or `0x06`, this address is not `OMCC` here —
-  and that is the register that takes the fans away from the firmware, so it is the one worth checking first.
+- `OMCC` is a two-valued register. If it holds anything but `0x00` or `0x06`, this address is not `OMCC` here,   and that is the register that takes the fans away from the firmware, so it is the one worth checking first.
 - `CPUT` has to read like a temperature, and has to agree within 25 °C with the CPU's own die sensor, which the
   driver has already given us.
 - `RPM1`/`RPM3` have to read like fan speeds, and have to agree within 25 % with the firmware's own `0x2D`.
@@ -325,7 +324,7 @@ anywhere. Four questions, cheapest first:
 Measured on 8C58 (2024 Transcend 14), which the old prefix rule would have refused:
 
 ```
-ec proof:    fits — CPU 69 C, fans 3232/3218 rpm, control 0x06
+ec proof:    fits, CPU 69 C, fans 3232/3218 rpm, control 0x06
 ec fan rpm:  3242 / 3227   mailbox 0x2D: 3200 / 3200
 ec temps:    CPU 62 C      die 62 C
 ```
@@ -361,13 +360,13 @@ reference machine, 8C58, Core Ultra 9 185H, TjMax 110:
 | immediately after one perflib counter read | 68 | 95 | 55 |
 
 The floor is the same either way, and the floor is the truth: this laptop idles at 54–55 °C. The die answers in
-under a millisecond and settles over a few hundred, so a perflib round trip — or anything else the machine
-happens to be doing — lifts the reading by tens of degrees until it settles, and a reading taken straight
+under a millisecond and settles over a few hundred, so a perflib round trip, or anything else the machine
+happens to be doing, lifts the reading by tens of degrees until it settles, and a reading taken straight
 afterwards reports that transient instead of the temperature. A series sampled out of process startup shows it
 as a decay curve: `76 70 72 85 91 78 72 75 66 73 70 81 58 72 66 70 61 55 55 54 54 55 55`.
 
 Two things follow, and both are in `Sensors.Loop`. The die is read at the top of the tick, a whole interval
-after that thread last did anything. And every consumer — the panel, the fan curve, the thermal guard — follows
+after that thread last did anything. And every consumer, the panel, the fan curve, the thermal guard, follows
 the **median of three readings** rather than one, because about one reading a minute still lands inside somebody
 else's burst (3 of 64 samples at or above 90 while the floor was 55), and a single one of those was enough to
 move the fans and to engage the thermal guard. The guard could then never release: release needs sixty
@@ -376,11 +375,11 @@ laptop, the third time at `cpu=102 chassis=45 fans=34/34`.
 
 The guard now also needs two consecutive ten-second ticks rather than one. That is a second layer, not the fix.
 Twenty seconds is far inside the time the chips take to come to any harm and they throttle themselves long
-before it; and what the guard is actually for — a chassis heating up, fans that have stopped — does not happen
+before it; and what the guard is actually for, a chassis heating up, fans that have stopped, does not happen
 in ten seconds either.
 
 For the record: LibreHardwareMonitor and OmenCore read the same registers with the same decode (OmenCore's own
-comment is "package temperature (0x1B1) — more stable than per-core"), and neither smooths what it displays.
+comment is "package temperature (0x1B1), more stable than per-core"), and neither smooths what it displays.
 Neither of them reads the sensor immediately after a WMI call either.
 
 ### The EC fan register is not the same one on every board (2026-09-18)
@@ -391,24 +390,37 @@ files, hex here):
 
 | Config | writes | reads | manual control |
 |---|---|---|---|
-| HP Omen 16 n0xxx | `0x34` / `0x35` — rpm/100 | `0x2E` / `0x2F` | sets `0x62` = `6` |
-| HP OMEN Laptop 15-en0xxx | `0x2C` / `0x2D` — **percent** | `0x2E` / `0x2F` | — |
-| HP Victus 16-e0xxx | `0x2C` / `0x2D` — **percent** | `0xB1` / `0xB3` | — |
+| HP Omen 16 n0xxx | `0x34` / `0x35`, rpm/100 | `0x2E` / `0x2F` | sets `0x62` = `6` |
+| HP OMEN Laptop 15-en0xxx | `0x2C` / `0x2D`, **percent** | `0x2E` / `0x2F` | none |
+| HP Victus 16-e0xxx | `0x2C` / `0x2D`, **percent** | `0xB1` / `0xB3` | none |
 
-This corroborates the map above — `0x62` = `0x06` for manual control, `0x34`/`0x35` in rpm/100, `0x2E`/`0x2F`
-and `0xB0`–`0xB3` for reading — and it also says something the map does not: **which pair actually drives the
+This corroborates the map above, `0x62` = `0x06` for manual control, `0x34`/`0x35` in rpm/100, `0x2E`/`0x2F`
+and `0xB0`–`0xB3` for reading, and it also says something the map does not: **which pair actually drives the
 fans is a per-model fact, not a per-generation one.** The Omen 16 uses the rpm registers; the 15-en0xxx, which
 is the closest relative of `878A` in the table (same 2020 OMEN generation), uses the percent registers.
 
 That matters because `878A` is the one board the EC write path exists for, and no NBFC config exists for the
-15-ek0xxx chassis at all — so the nearest evidence we have suggests our map's `0x34`/`0x35` is the wrong pair
+15-ek0xxx chassis at all, so the nearest evidence we have suggests our map's `0x34`/`0x35` is the wrong pair
 there.
 
 `EmbeddedController.Verify` cannot tell the two apart. It checks the control register, the temperature and the
 tachometers, and all three are identical in both variants: a 15-ek would pass verification and then be written
 on registers that do nothing. Verifying the *write* register means writing to it and watching a tachometer
-move, which is a different and more careful thing than reading four registers — and it is the only thing that
+move, which is a different and more careful thing than reading four registers, and it is the only thing that
 can actually answer the question.
 
 So the read half of the driver is evidence-backed everywhere and the write half is not, on the one board it was
 written for. The registers themselves are not the unknown; which of them is live on a given chassis is.
+
+**Which pair is live, measured (2026-09-18, 8C58).** `tools\drivertest.cmd` now writes each candidate pair and
+watches the tachometer, because reading cannot tell them apart:
+
+```
+fans at rest:              4329 rpm
+0x34/0x35 = 50 (rpm/100)   5022 rpm, +693   <-- this pair drives the fans on this board
+0x2C/0x2D = 80%            3929 rpm, -400   no change
+```
+
+5022 against a request of 50, which is 5000, so the unit is confirmed as well as the register. The percent pair
+accepts the write and does nothing, exactly as the corpus suggested it might. That is the fact a new board has
+to supply before its fans are driven, and it takes fifteen seconds to collect.

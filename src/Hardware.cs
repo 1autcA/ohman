@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — hardware layer.
+// Ohman: hardware layer.
 // HP OMEN BIOS control through the WMI class root\wmi:hpqBIntM (requires elevation).
 // Every opcode below was verified against three independent sources on 2026-09-08:
 //   * OMEN Gaming Hub's own background log on this machine (payload bytes it sends),
@@ -49,7 +49,7 @@ namespace Ohman {
         public int ThermalPolicy;        // byte 3: 0 = legacy (modes 0x00/0x01/0x02), 1 = current (0x30/0x31/0x50)
         public bool SwFanControl;        // byte 4 bit 0
         public int DefaultPl4;           // byte 5 (W)
-        public int DefaultConcurrentTdp; // byte 8 (W) — base for the "+15 W" slider
+        public int DefaultConcurrentTdp; // byte 8 (W), base for the "+15 W" slider
         public int GpuModes;             // byte 7: bitmask of graphics modes the firmware offers (1 iGPU-only, 2 Hybrid, 4 Discrete, 8 Advanced Optimus)
         public byte[] Raw = new byte[0];
         public string Hex { get { return Bios.Hex(Raw, 12); } }
@@ -66,7 +66,7 @@ namespace Ohman {
         /// <summary>0x10. WARNING: this is also the firmware's "user-defined state" keep-alive trigger (hp-wmi.c). Only call it
         /// when you intend to hold a manual/max fan state; calling it while fans are meant to be automatic freezes them.</summary>
         int GetFanCount();
-        /// <summary>Fan count from the fan table (0x2F) — a plain read with no side effects.</summary>
+        /// <summary>Fan count from the fan table (0x2F), a plain read with no side effects.</summary>
         int GetFanCountPassive();
         int GetFanTableMax();                       // highest level in the firmware's own fan table (0x2F); -1 when unavailable
         int[] GetFanLevels();                       // {fan1, fan2} in units of 100 RPM (0..57 on this machine)

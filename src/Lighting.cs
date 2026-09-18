@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — keyboard lighting.
+// Ohman: keyboard lighting.
 // HP laptops expose the keyboard backlight through the same BIOS mailbox as the performance controls, under a
 // second command id (0x20009). Zone colours sit in a 128-byte table, brightness/backlight in one byte whose bit 7
 // is the "on" flag. Which keyboard a model has comes from the performance mailbox (0x20008 / 0x2B).
@@ -220,7 +220,7 @@ namespace Ohman {
 
         /// <summary>Drop the cached HID enumeration. The device set is not fixed for the life of the process and
         /// Ohman sits in the tray for days: a dock, an undock or an external RGB keyboard being plugged in changes
-        /// it, and the failure is silent — we do not take a keyboard that has appeared and Windows repaints it
+        /// it, and the failure is silent, we do not take a keyboard that has appeared and Windows repaints it
         /// against us with nothing to say why. There is no WM_DEVICECHANGE hook in the app, so this hangs off the
         /// power-mode events, which is where a dock or a resume already shows up.</summary>
         public static void Forget() { keyboards = null; }

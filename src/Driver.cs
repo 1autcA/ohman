@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — the kernel driver, which is PawnIO (https://pawnio.eu) and not ours.
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Ohman: the kernel driver, which is PawnIO (https://pawnio.eu) and not ours.
 //
 // The WMI mailbox is all the firmware offers from user mode. Two things live behind it that the mailbox does
 // not reach: the embedded controller's own registers (ports 0x62/0x66) and the CPU's model-specific registers.
 // Both need ring 0, and the only way to ring 0 that Windows still allows is a signed driver. PawnIO is that
-// driver: signed, HVCI-compatible, open, and it executes nothing but signed modules — small Pawn scripts with
+// driver: signed, HVCI-compatible, open, and it executes nothing but signed modules, small Pawn scripts with
 // an allow-list each, so what a caller can touch is decided by the module's author, not by the caller.
 //
 // This file knows nothing about HP. It finds the driver, installs it on request, opens it, loads a module and
@@ -93,8 +93,7 @@ namespace Ohman {
         public const string SetupRepo = "namazso/PawnIO.Setup";
         public const string SetupAsset = "PawnIO_setup.exe";
         public const string HomeUrl = "https://pawnio.eu";
-        /// <summary>Where its code is. The row links to it: the name of a kernel driver is the one thing somebody
-        /// will want to look up before trusting it, and a search for it should not be the way they do that.</summary>
+        /// <summary>Where its code is. The row links to it, so looking it up is not a web search.</summary>
         public const string SourceUrl = "https://github.com/namazso/PawnIO";
         /// <summary>The name on the installer's Authenticode certificate. The chain is verified by Windows; this
         /// says whose chain it has to be, so a valid signature by somebody else is still not the installer.</summary>
@@ -191,28 +190,26 @@ namespace Ohman {
             error = null;
             string setup = NewSetupPath();
             try {
-                Say(progress, "finding the installer…");
+                Say(progress, "Finding the installer…");
                 Release r = Update.LatestOf(SetupRepo, SetupAsset);
                 if (r == null || string.IsNullOrEmpty(r.AssetUrl)) throw new Exception("could not find " + SetupAsset + " on " + SetupRepo);
-                Say(progress, "downloading " + (r.Size > 0 ? (r.Size / 1024 / 1024.0).ToString("0.0") + " MB" : "the installer") + "…");
+                Say(progress, "Downloading " + (r.Size > 0 ? (r.Size / 1024 / 1024.0).ToString("0.0") + " MB" : "the installer") + "…");
                 Update.Download(r.AssetUrl, setup, r.Size);
-                // Checked and launched through one open handle. Checking a path and then running that path are
-                // two different files if anything on the machine is watching for the gap between them, and this
-                // one runs with Ohman's token: the signature is the whole of what stands between a download and
-                // administrator. FileShare.Read lets Windows map the image to execute it and lets nothing
-                // rewrite or replace it while we hold it.
+                // Checked and launched through one handle. Checking a path and then running that path are two
+                // different files if anything is watching for the gap, and this one runs with Ohman's token.
+                // FileShare.Read still lets Windows map the image to execute it.
                 using (new FileStream(setup, FileMode.Open, FileAccess.Read, FileShare.Read)) {
-                    Say(progress, "checking the signature…");
+                    Say(progress, "Checking the signature…");
                     string signer;
                     if (!Signed(setup, out signer)) throw new Exception("the installer's signature is not " + Signer + (signer != null ? " (it is " + signer + ")" : ""));
                     // 2.2.0 upgrades 2.1.0 in place; anything older has to go first, which is what the other apps
                     // that bundle this installer do unconditionally.
                     Version have = InstalledVersion();
                     if (have != null && have < new Version(2, 1, 0)) {
-                        Say(progress, "removing PawnIO " + have + "…");
+                        Say(progress, "Removing PawnIO " + have + "…");
                         Run(setup, "-uninstall -silent");
                     }
-                    Say(progress, "installing…");
+                    Say(progress, "Installing…");
                     int rc = Run(setup, "-install -silent");
                     Log.Write("PawnIO installer exit code " + rc);
                     switch (rc) {
@@ -243,18 +240,17 @@ namespace Ohman {
                     if (!Installed) return true;                    // nothing registered and nothing to run: already gone
                     throw new Exception("no uninstaller in " + (dir ?? "(unknown folder)"));
                 }
-                // From a copy, under the same name, because Windows will not let a program delete the image it is
-                // running from. Together with the working directory (see Run) that is what left the folder behind
-                // on the first removal here, with the uninstaller reporting a sharing violation for its own files.
+                // From a copy, under the same name: Windows will not let a program delete the image it is running
+                // from. That and the working directory (see Run) is why the first removal here left the folder
+                // behind with a sharing violation.
                 copy = Path.Combine(Path.GetTempPath(), Program.AppName + "-pawnio-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(copy);
                 string runner = Path.Combine(copy, "uninstall.exe");
                 File.Copy(exe, runner);
                 int rc = Run(runner, "-uninstall -silent");
                 Log.Write("PawnIO uninstaller exit code " + rc + " · service " + ServiceState());
-                // The exit code is what the uninstaller thinks happened; the registry is what happened. A code we
-                // do not recognise, from a driver that is plainly gone, is not a failure worth telling anyone
-                // about - and the first removal here did exactly that, with a toast the row then contradicted.
+                // The exit code is what the uninstaller thinks happened; the registry is what happened. An
+                // unrecognised code from a driver that is plainly gone is not a failure worth reporting.
                 if (!Installed) return true;
                 throw new Exception(rc == 0 ? "the driver is still registered" : "the uninstaller returned " + PawnIoModule.Win32(rc));
             } catch (Exception ex) { error = ex.Message; Log.Write("PawnIO uninstall failed: " + ex.Message); return false; }

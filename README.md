@@ -88,7 +88,7 @@ mode (`0x52`), keyboard lighting (`0x20009`), plus read-only queries. The OMEN k
   holds one; 0 it will write, because that is off and HP's own tables ask for it.
 - The thermal guard runs on its own ten-second timer and forces maximum fan whatever mode you picked.
 - With the optional driver, the EC's own registers are reachable: the same map OmenMon and omen-fan use. Nothing
-  is written to a controller until it has recognised its own registers on your machine — its control register
+  is written to a controller until it has recognised its own registers on your machine, its control register
   holding a fan-control state, its temperature agreeing with the CPU's own sensor, its tachometers agreeing with
   the firmware. The 2025 OMEN MAX is never touched at all, because there the registers are somewhere else and
   writing these corrupts EC state. [docs/research.md](docs/research.md) §12 has the registers and the reasons.

@@ -1,4 +1,4 @@
-name: New laptop support
+﻿name: New laptop support
 description: A control is missing or wrong on your OMEN or Victus
 title: "Support: <model> (board XXXX)"
 labels: ["new laptop"]
@@ -43,7 +43,7 @@ body:
       description: >
         Only if you installed the optional driver from Settings. It is read-only, and on a board nobody has
         driven before it answers two questions nothing else can: whether the CPU's own temperature sensor
-        works here, and whether the embedded controller is laid out the way we expect — which is what decides
+        works here, and whether the embedded controller is laid out the way we expect, which is what decides
         whether your fans can be driven at all when the firmware refuses to.
       render: text
   - type: textarea

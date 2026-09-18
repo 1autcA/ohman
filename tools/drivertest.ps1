@@ -5,7 +5,8 @@
 # refuses this CPU, or another program holds the embedded controller. This asks all of them in one go.
 #
 # Most of it is Ohman.exe --driver, the same check the Troubleshoot link in Settings runs; the rest is what
-# only PowerShell can ask (Defender's own detections, Secure Boot). Read-only. Nothing is installed or written.
+# only PowerShell can ask (Defender's own detections, Secure Boot). Read-only, except for the fan test at the
+# end, which it asks you about first and which you can say no to.
 # Paste drivertest.txt into a GitHub issue or the Discord: the user name and machine name are already taken out.
 $ErrorActionPreference = 'Continue'
 $out = Join-Path $PSScriptRoot 'drivertest.txt'
@@ -26,12 +27,24 @@ L "----------------------------------------"
 
 # Ohman.exe sits one folder up in a release zip, or beside this file if somebody copied it here.
 $exe = @((Join-Path $PSScriptRoot '..\Ohman.exe'), (Join-Path $PSScriptRoot 'Ohman.exe')) | Where-Object { Test-Path $_ } | Select-Object -First 1
+# Both fan registers exist on every HP board anyone has looked at, both accept a write, and only one of them is
+# wired to a fan. Reading cannot tell them apart, so the only way to know is to write one and watch the
+# tachometer. It asks for more air than the machine is already moving, never less, and hands the fans back
+# afterwards. Fifteen seconds. Answering no just leaves that section out.
+$args2 = @('--driver')
+Write-Host ""
+Write-Host "The fan test raises your fans for about fifteen seconds to find which register controls them."
+Write-Host "It never slows them down, and it hands them back afterwards. On a new board this is the single"
+Write-Host "most useful thing you can send us. Skip it if the machine is busy."
+$yn = Read-Host "Run the fan test as well? [y/N]"
+if ($yn -match '^(y|yes)$') { $args2 += '--fantest'; L "Fan test: yes" } else { L "Fan test: skipped by the user" }
+
 if ($exe) {
-    L "Ohman.exe --driver:"
+    L "Ohman.exe $($args2 -join ' '):"
     L ""
     try {
         $tmp = Join-Path $env:TEMP ('ohman-driver-' + [guid]::NewGuid().ToString('N') + '.txt')
-        $p = Start-Process -FilePath $exe -ArgumentList '--driver' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $tmp
+        $p = Start-Process -FilePath $exe -ArgumentList $args2 -Wait -PassThru -NoNewWindow -RedirectStandardOutput $tmp
         Get-Content $tmp | ForEach-Object { L ("  " + (Scrub $_)) } | Out-Null
         Remove-Item $tmp -ErrorAction SilentlyContinue
     } catch { L ("  could not run it: " + (Scrub $_)) }

@@ -1,4 +1,4 @@
-﻿# Laptops
+# Laptops
 
 Ohman talks to the HP BIOS mailbox (`hpqBIntM`), which every OMEN and Victus laptop exposes. What differs
 between models is which commands the firmware answers and which bytes each performance mode wants. That is
@@ -20,8 +20,8 @@ One table per firmware generation, because the generation is what decides the mo
 are approximate: HP reuses a board across several SKUs, so the board id is the only thing that identifies a
 machine exactly.
 
-**A ✓ marks a board an owner has confirmed.** Everything else still runs — Ohman reads the firmware's own
-system-design data and drives the board with the bytes for its generation — it has simply not been confirmed
+**A ✓ marks a board an owner has confirmed.** Everything else still runs, Ohman reads the firmware's own
+system-design data and drives the board with the bytes for its generation, it has simply not been confirmed
 by a person yet. See [Verifying your laptop](#verifying-your-laptop), it takes five minutes.
 
 `8C58` is the reference machine: Core Ultra 9 185H + RTX 4070, checked byte for byte against OMEN Gaming Hub
@@ -73,7 +73,7 @@ are written down:
 "from the firmware" is the same path every unlisted OMEN takes: Ohman asks the board which firmware generation
 it is and drives it with that generation's bytes. It works, and nobody has yet confirmed on a Victus 15 that
 the quiet mode is the byte we think it is. The kernel's own Victus 16-r0xxx entry takes OMEN bytes despite the
-name, so the badge on the lid does not decide this — only a readback from the machine does.
+name, so the badge on the lid does not decide this, only a readback from the machine does.
 
 `8A3D` is the exception and shows how this gets settled: it is a Victus 15-fb0xxx, and it reached `hp-wmi`
 in July 2026 because one owner ran the fan table query on theirs and sent the readback to the kernel list.
@@ -82,7 +82,7 @@ machine.
 
 ### A note on v0 boards
 
-The v0 byte set has one default (`0x00`), one performance (`0x01`) and one cool (`0x02`) — there is no
+The v0 byte set has one default (`0x00`), one performance (`0x01`) and one cool (`0x02`), there is no
 separate low-power byte, so **Eco and Balanced are the same byte** and only Performance behaves differently.
 This is how the firmware is documented, not a bug, and `hp-wmi` maps low power to default on these boards for
 the same reason. Turning on **quieter Eco** in Settings makes Eco send `0x02` instead, which does differ.
@@ -113,7 +113,7 @@ This takes about five minutes and it is the most useful thing you can contribute
    and that Static, Breathe, Cycle and Wave all do something.
 7. **Driver (optional, but the most useful single thing on a new board).** Settings → Driver → Install. Then run
    `tools\drivertest.cmd`. It says whether the CPU's own registers answer on your chip, and whether your
-   embedded controller is laid out the way the map expects — the line to look for is `ec fan rpm` beside
+   embedded controller is laid out the way the map expects, the line to look for is `ec fan rpm` beside
    `mailbox 0x2D`, which should agree within a few percent. Attach `tools\drivertest.txt` too. Nothing is
    written to your EC either way; the check is read-only.
 8. **Exit.** Close Ohman and confirm the fans return to the firmware's own behaviour within two minutes and

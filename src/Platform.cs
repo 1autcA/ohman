@@ -1,5 +1,5 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-// Ohman — platform profiles. Everything model-specific lives here so that adding a laptop means adding a profile,
+// Ohman: platform profiles. Everything model-specific lives here so that adding a laptop means adding a profile,
 // not touching the engine or the UI. A board that is not listed still runs: Platforms.Generic builds a profile
 // from what the firmware reports about itself.
 using System;
@@ -172,7 +172,7 @@ namespace Ohman {
         /// <summary>A profile for a board without a verified entry. Null when the firmware generation is unknown (stay read-only).</summary>
         /// <summary>Thermal-policy version for boards whose firmware refuses the system-data query. Some older
         /// firmware answers 0x1A perfectly well and returns rc 3 for 0x28, which leaves nothing to say whether the
-        /// mode bytes are the v0 set or the v1 set — the Linux driver gives up in the same place and returns
+        /// mode bytes are the v0 set or the v1 set, the Linux driver gives up in the same place and returns
         /// -EOPNOTSUPP. Anything in here came from a readback on the machine itself: an OMEN Gaming Hub log, or
         /// `omenprobe call 1A 4 FF 30 00 00` against `... FF 00 ...`. Never from a guess about the model's age.</summary>
         static readonly Dictionary<string, int> PolicyWhenFirmwareWontSay = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
@@ -266,8 +266,8 @@ namespace Ohman {
         /// <summary>Boards an owner has run and reported working. The profile stays the one built from the
         /// firmware's own answers, which is the right one for them; this only records that a human confirmed it,
         /// which marks it Verified and stops asking the next owner to be the first to try it. Verified only ever
-        /// widens the thermal guard — it lets the chassis sensor arm a trigger before the sensor has read cool
-        /// once, and makes release stricter — so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
+        /// widens the thermal guard: it lets the chassis sensor arm a trigger before the sensor has read cool
+        /// once, and makes release stricter, so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
         static readonly string[] OwnerReported = { "8748", "8EEC", "8DCF", "88D2", "88EE", "8BAB", "8A26",
                                                    "8BCD", "8BAD", "8787", "8E10", "8BBE", "8A4C", "8BB3", "8BCA", "8BD5" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }

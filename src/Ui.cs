@@ -1708,6 +1708,11 @@ namespace Ohman {
                 if (name != null) DriverSubLinked(name, sub); else txtDriverSub.Text = sub;
                 btnDriver.Text = link ?? "";
                 btnDriver.Visibility = link != null ? Visibility.Visible : Visibility.Collapsed;
+                // Who it is and where it comes from, on the thing that starts it, so it is readable before the
+                // press. This used to be a dialog after the press, which is the wrong side of the decision.
+                btnDriver.ToolTip = driverState == DriverState.NotInstalled || driverState == DriverState.Outdated
+                    ? "PawnIO, by namazso (pawnio.eu). Open source, signed, and the same driver FanControl, LibreHardwareMonitor and a dozen other hardware tools install. Removable here at any time."
+                    : null;
                 tgDriver.Visibility = showSwitch ? Visibility.Visible : Visibility.Collapsed;
             }
             tgDriver.IsChecked = demo || S.DriverUse;

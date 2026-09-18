@@ -1687,8 +1687,10 @@ namespace Ohman {
             string gains = (intel ? "more accurate CPU temperature, power limits & throttle reasons" : "a more accurate CPU temperature")
                 + ((E.P.DriverFor & DriverFor.FanLevels) != 0 ? ", and fan levels on this board" : "");
             if (E.DriverBusy) { sub = E.DriverProgress; driverState = DriverState.Busy; }
-            else if (!installed) { sub = "Adds " + gains; link = "Install"; driverState = DriverState.NotInstalled; }
+            // A pending restart is a more specific state than "not installed", so it is asked about first: the
+            // installer has done its half and the device only appears after a reboot.
             else if (S.DriverRestartPending && !E.DriverReady) { sub = "Installed · restart Windows to finish"; link = "Restart now"; driverState = DriverState.RestartPending; }
+            else if (!installed) { sub = "Adds " + gains; link = "Install"; driverState = DriverState.NotInstalled; }
             else if (!S.DriverUse) { sub = "Off · adds " + gains; driverState = DriverState.Off; }
             else if (E.DriverOutdated) { name = DriverName(); sub = " · needs " + PawnIo.MinVersion + " or newer"; link = "Update"; driverState = DriverState.Outdated; }
             else if (E.DriverReady) {
@@ -1698,7 +1700,7 @@ namespace Ohman {
                 sub = " · " + (demo ? "simulated" : E.Route == Engine.FanRoute.Ec ? "fan levels and CPU temperature" : intel ? "CPU temperature and power limits" : "CPU temperature");
                 driverState = DriverState.Ready;
                 if (!demo && S.DriverInstalledByOhman) link = "Remove";
-            } else { title = "Driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; driverState = DriverState.Broken; }
+            } else { title = "Hardware driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; driverState = DriverState.Broken; }
             string key = title + "|" + (name ?? "") + sub + "|" + (link ?? "") + "|" + showSwitch;
             if (key != driverRowFor) {
                 driverRowFor = key;

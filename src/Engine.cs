@@ -889,6 +889,7 @@ namespace Ohman {
                         S.DriverInstalledByOhman = true;
                         S.DriverRestartPending = true;
                         S.Save();
+                        InitDriver();       // the registry key is there even though the device is not; the row reads that
                         DriverWhy = "installed · restart Windows to finish";
                         Say("Driver installed · restart Windows to finish");
                         break;
@@ -914,10 +915,14 @@ namespace Ohman {
                 }
                 string error;
                 bool ok = PawnIo.Uninstall(out error);
-                if (ok) { S.DriverInstalledByOhman = false; S.DriverRestartPending = false; S.Save(); DriverWhy = "not installed"; Say("Driver removed"); }
-                // Reopen first, then say why: InitDriver rewrites DriverWhy, so setting it before would put the
-                // reason on screen for exactly as long as it took the next line to run.
-                else { InitDriver(); DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); }
+                if (ok) { S.DriverInstalledByOhman = false; S.DriverRestartPending = false; S.Save(); }
+                // Either way, re-read the machine rather than assume what the uninstaller left behind. InitDriver
+                // is what refreshes the version the row reads, and skipping it on the path that succeeded left
+                // the row holding a version of a driver that was no longer there: it decided the driver was
+                // installed but unopenable, and offered to troubleshoot a removal that had worked.
+                InitDriver();
+                if (ok) Say("Driver removed");
+                else { DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); }
                 lock (applySync) ApplyFanCore();
                 return ok;
             } finally { DriverBusy = false; DriverProgress = ""; Changed(); }

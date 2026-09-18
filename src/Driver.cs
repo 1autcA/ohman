@@ -93,6 +93,9 @@ namespace Ohman {
         public const string SetupRepo = "namazso/PawnIO.Setup";
         public const string SetupAsset = "PawnIO_setup.exe";
         public const string HomeUrl = "https://pawnio.eu";
+        /// <summary>Where its code is. The row links to it: the name of a kernel driver is the one thing somebody
+        /// will want to look up before trusting it, and a search for it should not be the way they do that.</summary>
+        public const string SourceUrl = "https://github.com/namazso/PawnIO";
         /// <summary>The name on the installer's Authenticode certificate. The chain is verified by Windows; this
         /// says whose chain it has to be, so a valid signature by somebody else is still not the installer.</summary>
         public const string Signer = "namazso.eu";
@@ -109,6 +112,15 @@ namespace Ohman {
             return v != null && Version.TryParse(v, out ver) ? ver : null;
         }
         public static string InstallLocation() { return Reg("InstallLocation"); }
+        /// <summary>Where the driver's own files are. The installer writes InstallLocation, but a removal takes
+        /// that key away before the files, so a half-finished one has to be finishable: the installer offers no
+        /// choice of folder and its own documentation names the default, which is a safe second place to look.</summary>
+        public static string InstallFolder() {
+            string dir = InstallLocation();
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) return dir;
+            string def = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PawnIO");
+            return Directory.Exists(def) ? def : dir;
+        }
         public static bool Installed { get { return InstalledVersion() != null; } }
         public static bool Outdated { get { Version v = InstalledVersion(); return v != null && v < MinVersion; } }
         static string Reg(string value) {
@@ -207,23 +219,40 @@ namespace Ohman {
         /// (the setup binary behaves as the uninstaller under that name).</summary>
         public static bool Uninstall(out string error) {
             error = null;
+            string copy = null;
             try {
-                string dir = InstallLocation();
+                string dir = InstallFolder();
                 string exe = null;
                 if (!string.IsNullOrEmpty(dir)) {
                     foreach (string cand in new string[] { Path.Combine(dir, "uninstall.exe"), Path.Combine(dir, SetupAsset) })
                         if (File.Exists(cand)) { exe = cand; break; }
                 }
-                if (exe == null) throw new Exception("no uninstaller in " + (dir ?? "(unknown folder)"));
-                int rc = Run(exe, "-uninstall -silent");
-                Log.Write("PawnIO uninstaller exit code " + rc);
-                if (rc != 0 && rc != 3010) throw new Exception("the uninstaller returned " + PawnIoModule.Win32(rc));
-                return true;
+                if (exe == null) {
+                    if (!Installed) return true;                    // nothing registered and nothing to run: already gone
+                    throw new Exception("no uninstaller in " + (dir ?? "(unknown folder)"));
+                }
+                // From a copy, under the same name, because Windows will not let a program delete the image it is
+                // running from. Together with the working directory (see Run) that is what left the folder behind
+                // on the first removal here, with the uninstaller reporting a sharing violation for its own files.
+                copy = Path.Combine(Path.GetTempPath(), Program.AppName + "-pawnio-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(copy);
+                string runner = Path.Combine(copy, "uninstall.exe");
+                File.Copy(exe, runner);
+                int rc = Run(runner, "-uninstall -silent");
+                Log.Write("PawnIO uninstaller exit code " + rc + " · service " + ServiceState());
+                // The exit code is what the uninstaller thinks happened; the registry is what happened. A code we
+                // do not recognise, from a driver that is plainly gone, is not a failure worth telling anyone
+                // about - and the first removal here did exactly that, with a toast the row then contradicted.
+                if (!Installed) return true;
+                throw new Exception(rc == 0 ? "the driver is still registered" : "the uninstaller returned " + PawnIoModule.Win32(rc));
             } catch (Exception ex) { error = ex.Message; Log.Write("PawnIO uninstall failed: " + ex.Message); return false; }
+            finally { try { if (copy != null) Directory.Delete(copy, true); } catch { } }
         }
 
         static int Run(string exe, string args) {
-            using (Process p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(exe) })) {
+            // Never the folder being installed into or removed: a directory that is a running process's working
+            // directory cannot be deleted, which is half of why the first removal here failed.
+            using (Process p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetTempPath() })) {
                 if (!p.WaitForExit(180000)) { try { p.Kill(); } catch { } throw new Exception("the installer did not finish in three minutes"); }
                 return p.ExitCode;
             }

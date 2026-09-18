@@ -880,7 +880,9 @@ namespace Ohman {
                 string error;
                 bool ok = PawnIo.Uninstall(out error);
                 if (ok) { S.DriverInstalledByOhman = false; S.DriverRestartPending = false; S.Save(); DriverWhy = "not installed"; Say("Driver removed"); }
-                else { DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); InitDriver(); }
+                // Reopen first, then say why: InitDriver rewrites DriverWhy, so setting it before would put the
+                // reason on screen for exactly as long as it took the next line to run.
+                else { InitDriver(); DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); }
                 lock (applySync) ApplyFanCore();
                 return ok;
             } finally { DriverBusy = false; DriverProgress = ""; Changed(); }

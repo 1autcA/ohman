@@ -698,9 +698,9 @@ namespace Ohman {
                         // when it was us, and only with a yes: FanControl or LibreHardwareMonitor may be using it.
                         if (E.S.DriverInstalledByOhman && !E.Hw.IsDemo && PawnIo.Installed
                             && MessageBox.Show(IsVisible ? (Window)this : null,
-                                "Also remove the PawnIO driver " + Program.DisplayName + " installed?\n\nSay No if another program (FanControl, LibreHardwareMonitor) uses it.",
+                                "Also remove the driver " + Program.DisplayName + " installed?\n\nSay No if another program (FanControl, LibreHardwareMonitor) uses it.",
                                 Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) {
-                            if (E.RemoveDriver()) what += "  - removed the PawnIO driver\n";
+                            if (E.RemoveDriver()) what += "  - removed the driver\n";
                         }
                         resetting = true;                    // ExitApp must delete the settings, not save them
                         string folder = "";
@@ -1663,26 +1663,30 @@ namespace Ohman {
             var S = E.S;
             bool demo = E.Hw.IsDemo;
             bool installed = demo ? E.DriverReady : PawnIo.Installed;    // a simulated board that asks for the driver simulates not having it
-            string title = "Hardware driver", sub, link = null;
+            string title = "Hardware driver", sub, link = null, name = null;
             bool showSwitch = installed && !E.DriverBusy;
-            string gains = "Adds CPU die temperature, power limits and throttle reasons"
-                + ((E.P.DriverFor & DriverFor.FanLevels) != 0 ? ", and fan levels on this board" : "");
+            // What it is for, in the words of somebody who does not know what a register is. "die temperature"
+            // is the accurate name and means nothing to the person deciding whether to install a driver.
+            string gains = (E.P.DriverFor & DriverFor.FanLevels) != 0
+                ? "fan levels on this board, more accurate CPU temperature & power limits"
+                : "more accurate CPU temperature, power limits & throttle reasons";
             if (E.DriverBusy) sub = E.DriverProgress;
-            else if (demo && installed) sub = "Simulated · " + gains.Substring(5);
-            else if (!installed) { sub = gains; link = "Install"; }
+            else if (!installed) { sub = "Adds " + gains; link = "Install"; }
             else if (S.DriverRestartPending && !E.DriverReady) { sub = "Installed · restart Windows to finish"; link = "Restart now"; }
-            else if (!S.DriverUse) sub = "Off · " + gains.Substring(5);
-            else if (PawnIo.Outdated) { sub = "PawnIO " + PawnIo.InstalledVersion() + " · needs " + PawnIo.MinVersion + " or newer"; link = "Update"; }
+            else if (!S.DriverUse) sub = "Off · adds " + gains;
+            else if (PawnIo.Outdated) { name = DriverName(); sub = " · needs " + PawnIo.MinVersion + " or newer"; link = "Update"; }
             else if (E.DriverReady) {
-                sub = "PawnIO " + PawnIo.InstalledVersion() + " · " + (E.Cpu != null ? "CPU registers" : "no CPU module") + (E.Ec != null ? " + EC" : "")
-                    + (E.Route == Engine.FanRoute.Ec ? " · fan levels via driver" : "");
-                if (S.DriverInstalledByOhman) link = "Remove";
+                // Said as what it is doing, not as what it opened. "CPU registers" answered a question nobody asked.
+                // The simulated build takes this branch too, so the preview shows the row people will actually see.
+                name = DriverName();
+                sub = " · " + (demo ? "simulated" : E.Route == Engine.FanRoute.Ec ? "fan levels and CPU temperature" : "CPU temperature and power limits");
+                if (!demo && S.DriverInstalledByOhman) link = "Remove";
             } else { title = "Driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; }
-            string key = title + "|" + sub + "|" + (link ?? "") + "|" + showSwitch;
+            string key = title + "|" + (name ?? "") + sub + "|" + (link ?? "") + "|" + showSwitch;
             if (key != driverRowFor) {
                 driverRowFor = key;
                 txtDriverTitle.Text = title;
-                txtDriverSub.Text = sub;
+                if (name != null) DriverSubLinked(name, sub); else txtDriverSub.Text = sub;
                 btnDriver.Text = link ?? "";
                 btnDriver.Visibility = link != null ? Visibility.Visible : Visibility.Collapsed;
                 tgDriver.Visibility = showSwitch ? Visibility.Visible : Visibility.Collapsed;
@@ -1699,6 +1703,26 @@ namespace Ohman {
             }
             if (driverBanner.Visibility != want) { driverBanner.Visibility = want; if (cur == Page.Home) Remeasure(cur); }
         }
+        /// <summary>"PawnIO 2.2.0", and never the fourth field: nobody needs the build number of somebody else's driver.</summary>
+        static string DriverName() {
+            Version v = PawnIo.InstalledVersion();
+            return v == null ? "PawnIO" : "PawnIO " + (v.Build >= 0 ? v.ToString(3) : v.ToString());
+        }
+        /// <summary>The sub-line with the driver's name as a link to its source. Somebody who has just been asked to
+        /// trust a kernel driver should be one click from its code, not one search away from whatever a search finds.</summary>
+        void DriverSubLinked(string name, string rest) {
+            var link = new Hyperlink(new Run(name)) { Foreground = accent, TextDecorations = null, Cursor = Cursors.Hand, ToolTip = PawnIo.SourceUrl };
+            link.Click += delegate { OpenUrl(PawnIo.SourceUrl); };
+            link.MouseEnter += delegate { link.TextDecorations = TextDecorations.Underline; };
+            link.MouseLeave += delegate { link.TextDecorations = null; };
+            txtDriverSub.Inlines.Clear();
+            txtDriverSub.Inlines.Add(link);
+            txtDriverSub.Inlines.Add(new Run(rest));
+        }
+        void OpenUrl(string url) {
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch (Exception ex) { ShowToast("Cannot open " + url + ": " + ex.Message, true); }
+        }
         void DriverAction() {
             string link = btnDriver.Text;
             if (link == "Install" || link == "Update") InstallDriver();
@@ -1706,8 +1730,8 @@ namespace Ohman {
             else if (link == "Troubleshoot") DriverCheck();
             else if (link == "Remove") {
                 if (MessageBox.Show(IsVisible ? (Window)this : null,
-                        "Remove the PawnIO driver?\n\nOther programs may be using it too: FanControl and LibreHardwareMonitor install the same driver. "
-                        + Program.DisplayName + " goes back to the ACPI temperature and the firmware's own fan control.",
+                        "Remove the driver?\n\nOther programs may be using it too: FanControl and LibreHardwareMonitor install the same one. "
+                        + Program.DisplayName + " goes back to the temperature Windows reports and the firmware's own fan control.",
                         Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
                 Slow(delegate { E.RemoveDriver(); });
             }
@@ -1715,10 +1739,14 @@ namespace Ohman {
         void InstallDriver() {
             if (E.Hw.IsDemo) { ShowToast("Simulated hardware: nothing to install", true); return; }
             if (E.DriverBusy) return;
-            // Say what is about to happen once, the first time, in the words the installer itself uses.
+            // Asked once, and never with the driver's name as the headline: "Install PawnIO?" is a question about
+            // a word nobody has seen before, which reads as a warning. The name belongs in the attribution, where
+            // it is a fact about who wrote it rather than the thing being agreed to.
             if (!E.S.DriverInstalledByOhman && MessageBox.Show(IsVisible ? (Window)this : null,
-                    "Install the PawnIO driver?\n\n" + Program.DisplayName + " downloads the signed installer from its author (namazso, pawnio.eu, 3.4 MB), checks the signature, and installs it silently. "
-                    + "It is the same open-source driver FanControl and LibreHardwareMonitor use. No account, no prompt, and you can remove it here later.",
+                    "Install the driver?\n\n"
+                    + Program.DisplayName + " downloads it from its author (namazso, pawnio.eu) and checks the signature before anything runs. "
+                    + "It is open source with 390+ stars on GitHub, and the same driver FanControl and LibreHardwareMonitor install.\n\n"
+                    + "You can remove it here any time you wish.",
                     Program.DisplayName, MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
             Slow(delegate { E.InstallDriver(); });
         }

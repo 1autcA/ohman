@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Ohman: the CPU's own registers, through the driver.
 //
 // The ACPI zone Windows exposes is whatever the firmware put there: sometimes the package sensor, sometimes a
@@ -13,6 +13,7 @@
 //
 // Reads only. PL1/PL2 are writable through the same module and wait for a tester.
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Win32;
 
@@ -25,6 +26,7 @@ namespace Ohman {
         public double Pl1 = double.NaN, Pl2 = double.NaN;   // watts allowed, long and short term
         public bool Pl1On, Pl2On, PlLocked;
         public double Watts = double.NaN;           // package power over the last poll interval
+        public double Mhz = double.NaN;             // what the cores actually ran at over that interval
         public string Throttle = "";                // "" or why the CPU is being held back right now
     }
 
@@ -47,6 +49,57 @@ namespace Ohman {
         public CpuTelemetry Poll() { lock (sync) return PollCore(); }
 
         public virtual void Dispose() { if (Module != null) Module.Dispose(); }
+
+        // Architectural on both vendors. APERF counts cycles the core actually ran, MPERF counts them at the
+        // base clock, so their ratio over an interval is the average multiplier for that interval. Windows'
+        // "% Processor Performance" counter is a sampled estimate of the same ratio, which is why it was the
+        // number people kept reporting as wrong.
+        const uint IA32_MPERF = 0xE7, IA32_APERF = 0xE8;
+        ulong lastAperf, lastMperf;
+        bool haveClock;
+        protected double BaseMhz;                   // max non-turbo, set by the subclass
+
+        [DllImport("kernel32.dll")] static extern IntPtr SetThreadAffinityMask(IntPtr thread, IntPtr mask);
+        [DllImport("kernel32.dll")] static extern IntPtr GetCurrentThread();
+
+        /// <summary>The average clock since the last call. Both counters are per core, so a thread that moved
+        /// cores between calls would difference one core's counter against another's and produce nonsense; the
+        /// reads are pinned to core 0 for that reason, and the result is that core's clock rather than a package
+        /// average, which is the same thing the Windows counter approximates.</summary>
+        protected double Clock() {
+            if (BaseMhz <= 0) return double.NaN;
+            ulong a = 0, m = 0;      // && short-circuits, so the second may never be written
+            bool ok;
+            IntPtr prev = IntPtr.Zero;
+            Thread.BeginThreadAffinity();
+            try {
+                prev = SetThreadAffinityMask(GetCurrentThread(), (IntPtr)1);
+                ok = Msr(IA32_APERF, out a) && Msr(IA32_MPERF, out m);
+            } finally {
+                if (prev != IntPtr.Zero) SetThreadAffinityMask(GetCurrentThread(), prev);
+                Thread.EndThreadAffinity();
+            }
+            if (!ok) return double.NaN;
+            double mhz = double.NaN;
+            if (haveClock) {
+                ulong da = a - lastAperf, dm = m - lastMperf;
+                // A core that was parked reports no cycles, and a migration that slipped past the pin reports a
+                // ratio no chip can hold. Both mean "no reading this time", never a number.
+                if (dm > 0 && da > 0 && da < dm * 12) mhz = BaseMhz * da / (double)dm;
+            }
+            lastAperf = a; lastMperf = m; haveClock = true;
+            return mhz > 200 && mhz < 12000 ? mhz : double.NaN;
+        }
+
+        /// <summary>The nominal clock the kernel recorded at boot, which is the base clock on every machine we
+        /// have seen. Only a fallback: Intel states it exactly in a register.</summary>
+        protected static double NominalMhz() {
+            try {
+                using (RegistryKey k = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0"))
+                    if (k != null) { object v = k.GetValue("~MHz"); if (v is int) return (int)v; }
+            } catch { }
+            return 0;
+        }
 
         protected bool Msr(uint msr, out ulong v) {
             var o = new ulong[1];
@@ -105,6 +158,7 @@ namespace Ohman {
     sealed class IntelCpu : CpuRegisters {
         const uint IA32_THERM_STATUS = 0x19C, IA32_TEMPERATURE_TARGET = 0x1A2, IA32_PACKAGE_THERM_STATUS = 0x1B1;
         const uint MSR_RAPL_POWER_UNIT = 0x606, MSR_PKG_POWER_LIMIT = 0x610, MSR_PKG_ENERGY_STATUS = 0x611;
+        const uint MSR_PLATFORM_INFO = 0xCE;
         int tjMax;
         double powerUnit;
         public IntelCpu(PawnIoModule module) : base(module) { }
@@ -135,6 +189,13 @@ namespace Ohman {
                 t.PlLocked = (v & (1ul << 63)) != 0;
             }
             if (EnergyUnit > 0 && Msr(MSR_PKG_ENERGY_STATUS, out v)) t.Watts = Power(v & 0xFFFFFFFFu);
+            // Bits 15:8 are the max non-turbo ratio, times the 100 MHz bus clock every part since Sandy Bridge
+            // uses. Read once; it does not change.
+            if (BaseMhz == 0) {
+                if (Msr(MSR_PLATFORM_INFO, out v)) BaseMhz = ((v >> 8) & 0xFF) * 100.0;
+                if (BaseMhz <= 0) BaseMhz = NominalMhz();
+            }
+            t.Mhz = Clock();
             return t;
         }
     }
@@ -172,6 +233,9 @@ namespace Ohman {
             ulong v;
             if (EnergyUnit == 0 && Msr(MSR_PWR_UNIT, out v)) EnergyUnit = 1.0 / (1 << (int)((v >> 8) & 0x1F));
             if (EnergyUnit > 0 && Msr(MSR_PKG_ENERGY_STAT, out v)) t.Watts = Power(v & 0xFFFFFFFFu);
+            // No equivalent of Intel's platform-info register here, so the kernel's nominal figure it is.
+            if (BaseMhz == 0) BaseMhz = NominalMhz();
+            t.Mhz = Clock();
             return t;
         }
         public override void Dispose() { base.Dispose(); try { if (pci != null) pci.Close(); } catch { } }
@@ -185,7 +249,7 @@ namespace Ohman {
         public override string Describe { get { return "simulated"; } }
         protected override CpuTelemetry PollCore() {
             temp = Math.Max(38, Math.Min(88, temp + rnd.Next(-2, 3)));
-            return new CpuTelemetry { DieTemp = temp, TjMax = 110, Pl1 = 45, Pl2 = 80, Pl1On = true, Pl2On = true, Watts = 12 + rnd.Next(0, 9), Throttle = temp > 84 ? "power limit" : "" };
+            return new CpuTelemetry { DieTemp = temp, TjMax = 110, Pl1 = 45, Pl2 = 80, Pl1On = true, Pl2On = true, Watts = 12 + rnd.Next(0, 9), Mhz = 2300 + rnd.Next(0, 1800), Throttle = temp > 84 ? "power limit" : "" };
         }
     }
 }

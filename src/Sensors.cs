@@ -12,6 +12,7 @@ namespace Ohman {
 
     public sealed class SensorSnapshot {
         public double CpuTemp = double.NaN, CpuLoad = double.NaN, CpuMhz = double.NaN, CpuWatts = double.NaN;
+        public bool MhzFromDriver;
         public double AcpiTemp = double.NaN;              // the hottest ACPI zone, kept beside CpuTemp when the driver supplies that
         public double CpuTempNow = double.NaN;            // the single reading behind CpuTemp, before the median; for the report
         public bool CpuFromDriver;                        // CpuTemp is the package sensor read through the driver
@@ -123,7 +124,7 @@ namespace Ohman {
                 // a millisecond and takes a few hundred to settle, so read after the performance counters below,
                 // which are a perflib round trip and not free, it reports the transient our own measurement just
                 // caused: measured, a median of 68 that way against a floor of 55 free-running.
-                double driverWatts = double.NaN, die = double.NaN;
+                double driverWatts = double.NaN, die = double.NaN, driverMhz = double.NaN;
                 CpuRegisters cpu = CpuSource == null ? null : CpuSource();
                 if (cpu != null) {
                     try {
@@ -133,6 +134,7 @@ namespace Ohman {
                         if (ct.Pl2On) s.Pl2 = ct.Pl2;
                         s.Throttle = ct.Throttle ?? "";
                         driverWatts = ct.Watts;
+                        driverMhz = ct.Mhz;
                     } catch (Exception ex) { if (cpuPollFailures++ == 0) Log.Write("driver cpu poll: " + ex.Message); }
                 }
                 // The same 283..398 K window InitCounters uses, applied on every read and not only the first.
@@ -165,6 +167,10 @@ namespace Ohman {
                         // Without the percentage there is no way to know the real clock, and the base one dressed
                         // up as the current one is exactly the thing that got reported, so show nothing instead.
                         s.CpuMhz = (!double.IsNaN(pct) && pct > 1 && pct < 500) ? base_ * pct / 100.0 : double.NaN;
+                    }
+                    // The CPU's own answer wins. The counter above is a sampled estimate of the same ratio and
+                    // was the number owners kept reporting as wrong.
+                    if (!double.IsNaN(driverMhz)) { s.CpuMhz = driverMhz; s.MhzFromDriver = true;
                     }
                 } catch { }
                 // Package power from the energy counter the driver reads, when there is one: the same RAPL
@@ -222,11 +228,18 @@ namespace Ohman {
         // that jumps 40 W between two glances reads as broken even when each sample is honest.
         double wattsAvg = double.NaN;
         static readonly double WattsCeiling = 200;
+        readonly double[] recentWatts = new double[3];
+        int recentWattsCount;
+        // Median of three, the same thing the die temperature does, instead of the running average this used to
+        // keep. The average only rejected spikes above 60 W, so at idle a 25 W burst went straight in and then
+        // decayed slowly, and the figure on screen sat well above what the machine was really drawing. A median
+        // drops the burst outright and carries no lag from it.
         double Watts(double w) {
             if (w <= 0 || w > WattsCeiling) return wattsAvg;                       // nothing believable this time; keep what we had
-            if (double.IsNaN(wattsAvg)) { wattsAvg = w; return w; }
-            if (w > wattsAvg * 2.5 && w > 60) return wattsAvg;                     // a single spike, not the CPU waking up
-            wattsAvg += (w - wattsAvg) * 0.45;
+            recentWatts[2] = recentWatts[1]; recentWatts[1] = recentWatts[0]; recentWatts[0] = w;
+            if (recentWattsCount < 3) { recentWattsCount++; if (recentWattsCount < 3) { wattsAvg = w; return w; } }
+            double x = recentWatts[0], y = recentWatts[1], z = recentWatts[2];
+            wattsAvg = Math.Max(Math.Min(x, y), Math.Min(Math.Max(x, y), z));
             return wattsAvg;
         }
         void ReadNvidia(SensorSnapshot s) {

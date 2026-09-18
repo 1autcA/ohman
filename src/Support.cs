@@ -222,7 +222,7 @@ namespace Ohman {
                     System.Threading.Thread.Sleep(25);
                 }
                 System.Threading.Thread.Sleep(600);      // the energy counter needs a window it can divide by
-                try { CpuTelemetry t2 = e.Cpu.Poll(); if (!double.IsNaN(t2.Watts)) t.Watts = t2.Watts; if (!double.IsNaN(t2.DieTemp)) t.DieTemp = t2.DieTemp; } catch { }
+                try { CpuTelemetry t2 = e.Cpu.Poll(); if (!double.IsNaN(t2.Watts)) t.Watts = t2.Watts; if (!double.IsNaN(t2.DieTemp)) t.DieTemp = t2.DieTemp; if (!double.IsNaN(t2.Mhz)) t.Mhz = t2.Mhz; } catch { }
                 if (series.Count > 2) {
                     var sorted = new List<int>(series);
                     sorted.Sort();
@@ -248,6 +248,19 @@ namespace Ohman {
                 sb.AppendLine("  die temperature: " + Num(t.DieTemp, " C").PadRight(10) + " ACPI zone: " + Num(acpi, " C").PadRight(10) + " mailbox 0x23 (ambient): " + (mailbox >= 0 ? mailbox + " C" : "--") + (t.TjMax > 0 ? "   TjMax " + t.TjMax : ""));
                 sb.AppendLine("  power limits:    PL1 " + Num(t.Pl1, " W") + (t.Pl1On ? "" : " (off)") + "   PL2 " + Num(t.Pl2, " W") + (t.Pl2On ? "" : " (off)") + (t.PlLocked ? "   locked by firmware" : "") + "   package " + Num(t.Watts, " W"));
                 sb.AppendLine("  throttling:      " + (t.Throttle.Length > 0 ? t.Throttle : "no"));
+                // Both numbers, because the counter one is what got reported as wrong and a report that shows
+                // only the replacement cannot settle whether it is better.
+                double counterMhz = double.NaN;
+                try {
+                    using (var pf = new PerformanceCounter("Processor Information", "Processor Frequency", "_Total", true))
+                    using (var pp = new PerformanceCounter("Processor Information", "% Processor Performance", "_Total", true)) {
+                        pf.NextValue(); pp.NextValue();
+                        System.Threading.Thread.Sleep(400);
+                        double b_ = pf.NextValue(), pct = pp.NextValue();
+                        if (pct > 1 && pct < 500) counterMhz = b_ * pct / 100.0;
+                    }
+                } catch { }
+                sb.AppendLine("  clock:           " + Num(t.Mhz, " MHz").PadRight(12) + " Windows counter: " + Num(counterMhz, " MHz"));
             }
             if (e.Ec != null) {
                 EcReading r = e.Ec.Read();

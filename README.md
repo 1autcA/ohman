@@ -143,7 +143,7 @@ Use at your own risk.
 
 ## Declaration
 
-Claude was used for in-depth research on laptop models and their manuals so I can add extensive device support
+Fable 5.1 was used for in-depth research on laptop models and their manuals so I can add extensive device support
 to Ohman. It also assisted in code-writing. The code has been independently verified and security reviewed. Feel free to review it on your own terms and suggest improvements if any.
 
 ## Licence

@@ -382,3 +382,33 @@ in ten seconds either.
 For the record: LibreHardwareMonitor and OmenCore read the same registers with the same decode (OmenCore's own
 comment is "package temperature (0x1B1) — more stable than per-core"), and neither smooths what it displays.
 Neither of them reads the sensor immediately after a WMI call either.
+
+### The EC fan register is not the same one on every board (2026-09-18)
+
+NoteBook FanControl keeps a per-model, community-tested EC map for hundreds of laptops, which is the largest
+independent body of evidence about these controllers that exists. Its HP configs (`nbfc-linux`, decimal in the
+files, hex here):
+
+| Config | writes | reads | manual control |
+|---|---|---|---|
+| HP Omen 16 n0xxx | `0x34` / `0x35` — rpm/100 | `0x2E` / `0x2F` | sets `0x62` = `6` |
+| HP OMEN Laptop 15-en0xxx | `0x2C` / `0x2D` — **percent** | `0x2E` / `0x2F` | — |
+| HP Victus 16-e0xxx | `0x2C` / `0x2D` — **percent** | `0xB1` / `0xB3` | — |
+
+This corroborates the map above — `0x62` = `0x06` for manual control, `0x34`/`0x35` in rpm/100, `0x2E`/`0x2F`
+and `0xB0`–`0xB3` for reading — and it also says something the map does not: **which pair actually drives the
+fans is a per-model fact, not a per-generation one.** The Omen 16 uses the rpm registers; the 15-en0xxx, which
+is the closest relative of `878A` in the table (same 2020 OMEN generation), uses the percent registers.
+
+That matters because `878A` is the one board the EC write path exists for, and no NBFC config exists for the
+15-ek0xxx chassis at all — so the nearest evidence we have suggests our map's `0x34`/`0x35` is the wrong pair
+there.
+
+`EmbeddedController.Verify` cannot tell the two apart. It checks the control register, the temperature and the
+tachometers, and all three are identical in both variants: a 15-ek would pass verification and then be written
+on registers that do nothing. Verifying the *write* register means writing to it and watching a tachometer
+move, which is a different and more careful thing than reading four registers — and it is the only thing that
+can actually answer the question.
+
+So the read half of the driver is evidence-backed everywhere and the write half is not, on the one board it was
+written for. The registers themselves are not the unknown; which of them is live on a given chassis is.

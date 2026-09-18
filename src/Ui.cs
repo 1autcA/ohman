@@ -1708,10 +1708,14 @@ namespace Ohman {
                 if (name != null) DriverSubLinked(name, sub); else txtDriverSub.Text = sub;
                 btnDriver.Text = link ?? "";
                 btnDriver.Visibility = link != null ? Visibility.Visible : Visibility.Collapsed;
-                // Who it is and where it comes from, on the thing that starts it, so it is readable before the
-                // press. This used to be a dialog after the press, which is the wrong side of the decision.
-                btnDriver.ToolTip = driverState == DriverState.NotInstalled || driverState == DriverState.Outdated
-                    ? "PawnIO, by namazso (pawnio.eu). Open source, signed, and the same driver FanControl, LibreHardwareMonitor and a dozen other hardware tools install. Removable here at any time."
+                // What it is, on the thing that starts it. Not whose it is and not what it is called: a name
+                // nobody has seen is what made the dialog read as a warning, and the row credits PawnIO by name
+                // and by link the moment it is installed, which is when the name means something.
+                btnDriver.ToolTip =
+                    driverState == DriverState.NotInstalled || driverState == DriverState.Outdated
+                        ? "Same driver FanControl, LibreHardwareMonitor and a dozen other hardware tools install. Removable any time."
+                    : driverState == DriverState.Ready
+                        ? "FanControl and LibreHardwareMonitor install the same driver, so removing it affects them too. " + Program.DisplayName + " goes back to the temperature Windows reports."
                     : null;
                 tgDriver.Visibility = showSwitch ? Visibility.Visible : Visibility.Collapsed;
             }
@@ -1754,13 +1758,10 @@ namespace Ohman {
             if (driverState == DriverState.NotInstalled || driverState == DriverState.Outdated) InstallDriver();
             else if (driverState == DriverState.RestartPending) RestartWindows("the driver");
             else if (driverState == DriverState.Broken) DriverCheck();
-            else if (driverState == DriverState.Ready) {
-                if (MessageBox.Show(IsVisible ? (Window)this : null,
-                        "Remove the driver?\n\nOther programs may be using it too: FanControl and LibreHardwareMonitor install the same one. "
-                        + Program.DisplayName + " goes back to the temperature Windows reports and the firmware's own fan control.",
-                        Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-                Slow(delegate { E.RemoveDriver(); });
-            }
+            // Removing asks no more than installing did. It is one click to put back, the row says what else
+            // uses it before the press, and a dialog between somebody and the button they aimed at is the thing
+            // that made this feel like a warning rather than a setting.
+            else if (driverState == DriverState.Ready) Slow(delegate { E.RemoveDriver(); });
         }
         void InstallDriver() {
             if (E.Hw.IsDemo) { ShowToast("Simulated hardware: nothing to install", true); return; }

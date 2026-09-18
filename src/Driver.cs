@@ -191,12 +191,10 @@ namespace Ohman {
             error = null;
             string setup = NewSetupPath();
             try {
-                Say(progress, "looking up PawnIO…");
+                Say(progress, "finding the installer…");
                 Release r = Update.LatestOf(SetupRepo, SetupAsset);
                 if (r == null || string.IsNullOrEmpty(r.AssetUrl)) throw new Exception("could not find " + SetupAsset + " on " + SetupRepo);
-                // Named here rather than in a dialog beforehand: this is where saying whose driver it is tells
-                // somebody something, and it costs them nothing to read.
-                Say(progress, "downloading PawnIO " + r.Tag + (r.Size > 0 ? ", " + (r.Size / 1024 / 1024.0).ToString("0.0") + " MB" : "") + ", from namazso…");
+                Say(progress, "downloading " + (r.Size > 0 ? (r.Size / 1024 / 1024.0).ToString("0.0") + " MB" : "the installer") + "…");
                 Update.Download(r.AssetUrl, setup, r.Size);
                 // Checked and launched through one open handle. Checking a path and then running that path are
                 // two different files if anything on the machine is watching for the gap between them, and this

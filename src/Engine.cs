@@ -436,20 +436,13 @@ namespace Ohman {
                     if (g != null) {
                         try { Hw.GetGpuPower(); g.HasGpuPower = true; } catch (Exception ex) { Log.Write("generic: no GPU power control (" + ex.Message + ")"); }
                         try { int top = Hw.GetFanTableMax(); if (top > g.Curve.Ceiling) g.Curve.Rescale(top); } catch { }
-                        // What this machine was measured doing beats what its firmware claims, and on the boards
-                        // where this matters the firmware claims nothing usable, so the table cannot lower a
-                        // ceiling that started too high. NoteFanLevels only writes this after watching the fans
-                        // refuse to go any faster while Ohman was asking for the top.
-                        if (S.FanCeilingSeen > g.Curve.Floor + 5 && S.FanCeilingSeen < g.Curve.Ceiling) {
-                            Log.Write("fan ceiling " + g.Curve.Ceiling + " -> " + S.FanCeilingSeen + ", measured on this machine");
-                            g.Curve.Rescale(S.FanCeilingSeen);
-                        }
                         P = g;
                         Supported = true;
                         Generic = true;
                         Log.Write("generic profile: " + g.Notes + " · modes " + g.ModeEco.ToString("X2") + "/" + g.ModeBalanced.ToString("X2") + "/" + g.ModePerformance.ToString("X2") + " · powerGain=" + g.HasPowerGain + " (base " + g.TdpBase + " W) · gpuPower=" + g.HasGpuPower + " · fan ceiling " + g.Curve.Ceiling);
                     } else Log.Write("generic profile not possible (thermal policy v" + Info.ThermalPolicy + "); read-only");
                 }
+                ApplyMeasuredCeiling();
                 // Byte 7 advertises which graphics modes exist, but 8BC2 advertises them and then refuses 0x52
                 // both ways: rc 3 reading, rc 6 writing. Its owner could pick a mode and nothing happened, so a
                 // firmware that will not say which mode it is in does not get to be asked to change it.
@@ -718,14 +711,34 @@ namespace Ohman {
         // 4300 rpm by an imaginary 5700 and shows 75% at full tilt, with Max looking dead because the curve was
         // already pinned at the cap. So measure it instead. 0x2D reports the speed the fans are turning, not the
         // level asked for, which is why it has to settle: a fan still spooling up reads low and means nothing.
+        /// <summary>Use what this machine was measured doing, whichever way it points.
+        ///
+        /// A verified profile's ceiling is no more measured than a generic one's: 8C58's 57 came out of OGH's
+        /// profiles.json, and asking that machine for maximum fan gets 59 back. So this applies everywhere. What
+        /// differs is the curve underneath. A generic board is running the Transcend 14's curve on loan and wants
+        /// it stretched to its own range; a verified board's curve is already its own, and stretching it would
+        /// walk it away from the table it was checked against, so there only the ceiling moves.</summary>
+        void ApplyMeasuredCeiling() {
+            if (P == null || P.Curve == null || S.FanCeilingSeen <= P.Curve.Floor + 5) return;
+            int was = P.Curve.Ceiling;
+            if (S.FanCeilingSeen == was) return;
+            if (Generic) P.Curve.Rescale(S.FanCeilingSeen); else P.Curve.Ceiling = S.FanCeilingSeen;
+            Log.Write("fan ceiling " + was + " -> " + P.Curve.Ceiling + ", measured on this machine"
+                + (Generic ? " (curve rescaled with it)" : ""));
+        }
+
         int ceilingTicks, ceilingHighWater;
         const int CeilingSettleTicks = 8;          // readings spent asking for the top before the answer is believed
-        const int CeilingMargin = 10;              // and how far short it must fall, so noise never moves it
+        // The high-water mark is the fastest reading seen, so it is a lower bound and the two directions are not
+        // the same claim. Seeing the fans go past the ceiling proves the ceiling is too low, whatever the margin.
+        // Falling short of it only means they did not get there this time, which a stuck fan or a cold room also
+        // explains, so that direction has to clear a gap noise cannot.
+        const int CeilingOver = 2, CeilingShort = 10;
         /// <summary>One fan reading, from wherever Ohman happened to take it. Applied at the next start rather
         /// than now: the sliders take their range once, before anything is wired to them, because changing a
         /// Maximum coerces the Value under it and that would read as the owner moving the slider.</summary>
         public void NoteFanLevels(int[] f) {
-            if (f == null || f.Length < 2 || P == null || P.Curve == null || !Generic) return;
+            if (f == null || f.Length < 2 || P == null || P.Curve == null) return;
             int seen = Math.Max(f[0], f[1]);
             if (seen <= 0 || seen > 255) return;
             // Only while asking for everything. Any lower and a low reading says nothing about the limit.
@@ -736,7 +749,9 @@ namespace Ohman {
             if (++ceilingTicks < CeilingSettleTicks) return;
             ceilingTicks = 0;
             int real = ceilingHighWater;
-            if (real >= P.Curve.Ceiling - CeilingMargin || real <= P.Curve.Floor + 5 || real == S.FanCeilingSeen) return;
+            int gap = real - P.Curve.Ceiling;
+            if (gap < CeilingOver && gap > -CeilingShort) return;
+            if (real <= P.Curve.Floor + 5 || real == S.FanCeilingSeen) return;
             S.FanCeilingSeen = real;
             S.Save();
             Log.Write("fan ceiling learned: asked for " + P.Curve.Ceiling + " and these fans never went past " + real

@@ -26,6 +26,8 @@ did what it says. Its settings are then fixed rather than worked out at run time
 | Victus 16-r0xxx | `8BBE` | 2026-09-16 | Core i5-13500H, BIOS F.31. Owner filed a report with nothing wrong on it. |
 | OMEN 16-k0006nl | `8A4C` | 2026-09-16 | Owner confirmed the controls work. |
 | OMEN Transcend 16-u0xxx | `8BB3` | 2026-09-16 | Owner filed a report with nothing wrong on it. |
+| OMEN 16.1 inch (16-xf0xxx) | `8BCA` | 2026-09-18 | Ryzen 7 7840HS + RTX 4060, BIOS F.31. Owner filed a report with nothing wrong on it. A second owner reported the same board with an RTX 4070. |
+| Victus 16 S / R | `8BD5` | 2026-09-18 | Owner confirmed it works, on Discord. |
 | OMEN 16-xd0xxx | `8BCD` | 2026-09-15 | Ryzen 7 7840HS + Radeon 780M, BIOS F.31. Owner ran the checklist: modes, max fan, manual, curve, power gain, GPU power, graphics switching, the four-zone keyboard and all four effects, and the fans returned to normal after exiting. |
 | OMEN 17-ck2013nl | `8BAD` | 2026-09-15 | Owner confirmed modes, max fan, manual, curve, auto, GPU power and that the fans return after exiting. The keyboard lighting does not work on this machine and is still open. A timed thermal profile board in `hp-wmi`, so the fans respond to a mode change even where the power limits may not. |
 | OMEN 15 / 17 | `8787` | 2026-09-15 | Owner confirmed the controls work. |
@@ -53,7 +55,7 @@ reuses a board across several SKUs.
 | Model | Board ids |
 |---|---|
 | OMEN 16 (2021–2022) | `8A42`, `8A43` |
-| OMEN 16 (2023–2025) | `8BAA`, `8BCA`, `8C76`, `8C77`, `8C78`, `8D24`, `8D26`, `8D2F`, `8E35` |
+| OMEN 16 (2023–2025) | `8BAA`, `8C76`, `8C77`, `8C78`, `8D24`, `8D26`, `8D2F`, `8E35` |
 | OMEN MAX 16 (2025) | `8D41`, `8D87` |
 
 ### OMEN 15 and OMEN 17
@@ -76,7 +78,7 @@ are written down:
 |---|---|---|
 | Victus 16 (2021–2023) | `88F8`, `8A25` | from `hp-wmi` |
 | Victus 15-fb0xxx | `8A3D` | from `hp-wmi`, no quiet mode |
-| Victus 16 S / R (2023–2024) | `8B2F`, `8BD4`, `8BD5`, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
+| Victus 16 S / R (2023–2024) | `8B2F`, `8BD4`, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
 | Victus 15, other models | `88D9`, `88DA`, `8A3E`, `8C2F`, `8C30`, `8C3F`, `8D07`, `8DCD`, `8E5E` | from the firmware |
 
 "from the firmware" is the same path every unlisted OMEN takes: Ohman asks the board which firmware generation

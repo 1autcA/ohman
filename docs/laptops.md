@@ -1,4 +1,4 @@
-# Laptops
+﻿# Laptops
 
 Ohman talks to the HP BIOS mailbox (`hpqBIntM`), which every OMEN and Victus laptop exposes. What differs
 between models is which commands the firmware answers and which bytes each performance mode wants. That is
@@ -66,7 +66,7 @@ are written down:
 |---|---|---|
 | Victus 16 (2021–2023) | `88F8`, `8A25` | from `hp-wmi` |
 | Victus 15-fb0xxx | `8A3D` | from `hp-wmi`, no quiet mode |
-| Victus 16-r0xxx | `8BC2` | OMEN bytes; `hp-wmi` lists it as OMEN despite the name |
+| Victus 16-r0xxx | `8BC2` ✓ | OMEN bytes; `hp-wmi` lists it as OMEN despite the name |
 | Victus 16 S / R (2023–2024) | `8B2F`, `8BBE` ✓, `8BD4`, `8BD5` ✓, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
 | Victus 15 and 16, other models | `88D9`, `88DA`, `88EE` ✓, `8A26` ✓, `8A3E`, `8C2F`, `8C30`, `8C3F`, `8D07`, `8DCD`, `8DCF` ✓, `8E5E` | from the firmware |
 

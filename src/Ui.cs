@@ -106,9 +106,10 @@ namespace Ohman {
         Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg;
         TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
         // driver
-        TextBlock txtDriverTitle, txtDriverSub, btnDriver, txtPl, txtDriverNudge, txtDriverNudgeSub, btnDriverNudge;
+        TextBlock txtDriverTitle, txtDriverSub, btnDriver, txtDriverNudge, txtDriverNudgeSub, btnDriverNudge;
         ToggleButton tgDriver;
-        FrameworkElement plRow, driverBanner, driverClose, driverRow;
+        FrameworkElement driverBanner, driverClose, driverRow;
+        Run runCpuHead, runCpuWatts, runCpuTail;    // the CPU caption in three pieces, so the limits can hang off the wattage alone
         Brush subCpuBrush;
         string driverRowFor = "?";          // the state the row was last built for, so Refresh does not rebuild it every tick
         Border updateRow;
@@ -384,8 +385,6 @@ namespace Ohman {
             txtDriverSub = F<TextBlock>("TxtDriverSub");
             btnDriver = F<TextBlock>("BtnDriver");
             tgDriver = F<ToggleButton>("TgDriver");
-            plRow = F<FrameworkElement>("PlRow");
-            txtPl = F<TextBlock>("TxtPl");
             driverBanner = F<FrameworkElement>("DriverBanner");
             txtDriverNudge = F<TextBlock>("TxtDriverNudge");
             txtDriverNudgeSub = F<TextBlock>("TxtDriverNudgeSub");
@@ -496,6 +495,15 @@ namespace Ohman {
                     Navigate(Page.Fans, true);
                 }
             };
+            // The CPU caption is three runs rather than one string: the power limits belong to the wattage and
+            // nothing else on the page, so they hang off that piece of it and stay out of everybody's way.
+            runCpuHead = new Run("CPU");
+            runCpuWatts = new Run();
+            runCpuTail = new Run();
+            subCpu.Inlines.Clear();
+            subCpu.Inlines.Add(runCpuHead);
+            subCpu.Inlines.Add(runCpuWatts);
+            subCpu.Inlines.Add(runCpuTail);
             if (E.Light == null) lightRow.Visibility = Visibility.Collapsed;
             else {
                 var layout = BuildLayout();
@@ -1910,20 +1918,26 @@ namespace Ohman {
             bigGpu.Text = double.IsNaN(s.GpuTemp) ? "--" : s.GpuTemp.ToString("0", CultureInfo.InvariantCulture);
             bigCpu.Foreground = TempBrush(s.CpuTemp);
             bigGpu.Foreground = TempBrush(s.GpuTemp);
-            subCpu.Text = "CPU" + (double.IsNaN(s.CpuLoad) ? "" : " · " + s.CpuLoad.ToString("0") + "%") + (double.IsNaN(s.CpuMhz) || s.CpuMhz <= 0 ? "" : " · " + (s.CpuMhz / 1000).ToString("0.0") + " GHz") + (double.IsNaN(s.CpuWatts) ? "" : " · " + s.CpuWatts.ToString("0") + " W")
-                + (s.Throttle.Length > 0 ? " · " + s.Throttle : "");
+            runCpuHead.Text = "CPU" + (double.IsNaN(s.CpuLoad) ? "" : " · " + s.CpuLoad.ToString("0") + "%") + (double.IsNaN(s.CpuMhz) || s.CpuMhz <= 0 ? "" : " · " + (s.CpuMhz / 1000).ToString("0.0") + " GHz");
+            runCpuWatts.Text = double.IsNaN(s.CpuWatts) ? "" : " · " + s.CpuWatts.ToString("0") + " W";
+            runCpuWatts.ToolTip = PowerLimits(s);
+            runCpuTail.Text = s.Throttle.Length > 0 ? " · " + s.Throttle : "";
             // Amber while the CPU says it is being held back, and the caption says why: that is the one word
             // the ACPI zone could never supply, and the reason the driver exists on boards with working fans.
             subCpu.Foreground = s.Throttle.Length > 0 ? Ui.Brush(Ui.Warn) : subCpuBrush;
-            subCpu.ToolTip = s.CpuFromDriver ? "CPU die temperature, read from the CPU through the driver" : null;
-            bool pl = !double.IsNaN(s.Pl1) || !double.IsNaN(s.Pl2);
-            if (pl) txtPl.Text = "PL1 " + (double.IsNaN(s.Pl1) ? "--" : s.Pl1.ToString("0") + " W") + " · PL2 " + (double.IsNaN(s.Pl2) ? "--" : s.Pl2.ToString("0") + " W");
-            var plWant = pl ? Visibility.Visible : Visibility.Collapsed;
-            if (plRow.Visibility != plWant) { plRow.Visibility = plWant; if (cur == Page.Settings) Remeasure(cur); }
+            bigCpu.ToolTip = s.CpuFromDriver ? "Die temperature, read from the CPU itself" : null;
             subGpu.Text = "GPU" + (double.IsNaN(s.GpuLoad) ? "" : " · " + s.GpuLoad.ToString("0") + "%") + (double.IsNaN(s.GpuWatts) ? "" : " · " + s.GpuWatts.ToString("0") + " W");
             txtFootRight.Text = s.BatteryPercent >= 0 && s.BatteryPercent <= 100 ? (s.OnBattery ? "Battery " : "AC · ") + s.BatteryPercent + "%" : "";
         }
         Brush TempBrush(double t) { return double.IsNaN(t) ? Ui.TextB : t >= E.P.Guard.CpuHot ? Ui.Brush(Ui.Danger) : t >= E.P.Guard.WarnAt ? Ui.Brush(Ui.Warn) : Ui.TextB; }
+        /// <summary>What the wattage is measured against, for the tooltip on it. Null without the driver: the
+        /// limits are the CPU's own registers and nothing else on this machine will say what they are.</summary>
+        static string PowerLimits(SensorSnapshot s) {
+            string a = double.IsNaN(s.Pl1) ? null : s.Pl1.ToString("0", CultureInfo.InvariantCulture) + " W continuously";
+            string b = double.IsNaN(s.Pl2) ? null : s.Pl2.ToString("0", CultureInfo.InvariantCulture) + " W in short bursts";
+            if (a == null && b == null) return null;
+            return "This CPU is allowed " + (a != null && b != null ? a + " and " + b : (a ?? b));
+        }
 
         void ReadHardwareAsync() {
             if (reading || (!E.BiosOk && !E.Hw.IsDemo)) return;

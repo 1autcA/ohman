@@ -702,17 +702,6 @@
                 <ToggleButton x:Name="TgGuard" Grid.Column="1" Style="{StaticResource Switch}"/>
               </Grid>
             </Border>
-            <!-- Only with the driver: the limits the CPU is actually holding, read from its own registers. -->
-            <Border x:Name="PlRow" Visibility="Collapsed" BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
-              <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
-                  <TextBlock Text="CPU power limits" Style="{StaticResource Row}"/>
-                  <TextBlock Text="What the CPU is holding right now, from its own registers" Style="{StaticResource RowSub}"/>
-                </StackPanel>
-                <TextBlock x:Name="TxtPl" Grid.Column="1" Style="{StaticResource Mono}" FontSize="12" Foreground="{StaticResource Text}" Text="--"/>
-              </Grid>
-            </Border>
 
             <TextBlock x:Name="SecDisplay" Text="DISPLAY" Margin="0,26,0,6"/>
             <Border x:Name="GfxRow" Visibility="Collapsed" BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">

@@ -397,7 +397,7 @@ namespace Ohman {
             toast = F<Border>("Toast");
             txtToast = F<TextBlock>("TxtToast");
             btnExit.Text = "Exit " + Program.DisplayName;
-            foreach (string n in new[] { "SecKey", "SecPower", "SecDisplay", "SecApp" }) Track(n);
+            foreach (string n in new[] { "SecKey", "SecPower", "SecDisplay", "SecDriver", "SecApp" }) Track(n);
         }
         /// <summary>Swap a placeholder TextBlock for the letter-spaced section label the design uses.</summary>
         void Track(string name) {
@@ -1662,13 +1662,13 @@ namespace Ohman {
         void UpdateDriverRow() {
             var S = E.S;
             bool demo = E.Hw.IsDemo;
-            bool installed = demo || PawnIo.Installed;
+            bool installed = demo ? E.DriverReady : PawnIo.Installed;    // a simulated board that asks for the driver simulates not having it
             string title = "Hardware driver", sub, link = null;
             bool showSwitch = installed && !E.DriverBusy;
             string gains = "Adds CPU die temperature, power limits and throttle reasons"
                 + ((E.P.DriverFor & DriverFor.FanLevels) != 0 ? ", and fan levels on this board" : "");
             if (E.DriverBusy) sub = E.DriverProgress;
-            else if (demo) sub = "Simulated · " + gains.Substring(5);
+            else if (demo && installed) sub = "Simulated · " + gains.Substring(5);
             else if (!installed) { sub = gains; link = "Install"; }
             else if (S.DriverRestartPending && !E.DriverReady) { sub = "Installed · restart Windows to finish"; link = "Restart now"; }
             else if (!S.DriverUse) sub = "Off · " + gains.Substring(5);
@@ -2045,6 +2045,15 @@ namespace Ohman {
                 try {
                     Morph(false);
                     root.UpdateLayout();
+                    // --page update / driver: the eased scroll never ran (no frames rendered off-screen), so put
+                    // the row in view now that the page has its final layout.
+                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : null;
+                    if (at != null && cur == Page.Settings) {
+                        try {
+                            var content = scroll.Content as FrameworkElement;
+                            if (content != null) { scroll.ScrollToVerticalOffset(Math.Max(0, at.TranslatePoint(new Point(0, 0), content).Y - 96)); root.UpdateLayout(); }
+                        } catch { }
+                    }
                     SnapshotElement(root, screenshotPath);
                     Log.Write("screenshot saved " + screenshotPath);
                     if (osd != null && osd.IsVisible) { var f = (FrameworkElement)osd.Content; osd.Opacity = 1; SnapshotElement(f, screenshotPath + ".osd.png"); }

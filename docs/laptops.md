@@ -111,7 +111,12 @@ This takes about five minutes and it is the most useful thing you can contribute
    restart. If you do, confirm it comes back correctly.
 6. **Lighting.** If your keyboard lights, check that the zones in the app match the zones on the keyboard,
    and that Static, Breathe, Cycle and Wave all do something.
-7. **Exit.** Close Ohman and confirm the fans return to the firmware's own behaviour within two minutes and
+7. **Driver (optional, but the most useful single thing on a new board).** Settings → Driver → Install. Then run
+   `tools\drivertest.cmd`. It says whether the CPU's own registers answer on your chip, and whether your
+   embedded controller is laid out the way the map expects — the line to look for is `ec fan rpm` beside
+   `mailbox 0x2D`, which should agree within a few percent. Attach `tools\drivertest.txt` too. Nothing is
+   written to your EC either way; the check is read-only.
+8. **Exit.** Close Ohman and confirm the fans return to the firmware's own behaviour within two minutes and
    nothing is stuck.
 
 Then run:

@@ -185,8 +185,8 @@ namespace Ohman {
             sb.AppendLine("Driver (PawnIO, optional)");
             if (e.Hw.IsDemo) { sb.AppendLine("  (simulated hardware: a pretend driver with pretend registers)"); }
             else {
-                Version v = PawnIo.InstalledVersion();
-                sb.AppendLine("  installed:   " + (v != null ? v + "  at " + Scrub(PawnIo.InstallLocation() ?? "?") + (PawnIo.Outdated ? "   <- older than " + PawnIo.MinVersion + ", update it" : "") : "no"));
+                Version v = e.DriverVersion;
+                sb.AppendLine("  installed:   " + (v != null ? v + "  at " + Scrub(PawnIo.InstallFolder() ?? "?") + (e.DriverOutdated ? "   <- older than " + PawnIo.MinVersion + ", update it" : "") : "no"));
                 sb.AppendLine("  service:     " + PawnIo.ServiceState());
                 sb.AppendLine("  setting:     " + (e.S.DriverUse ? "on" : "off") + "   restart pending: " + (e.S.DriverRestartPending ? "yes" : "no") + "   installed by Ohman: " + (e.S.DriverInstalledByOhman ? "yes" : "no"));
                 // The two Windows features that decide whether a driver loads at all. PawnIO is signed and
@@ -201,6 +201,10 @@ namespace Ohman {
             }
             sb.AppendLine("  cpu module:  " + (e.Cpu != null ? e.Cpu.Describe : "unavailable (" + Scrub(e.DriverWhy) + ")"));
             sb.AppendLine("  ec map:      " + (e.Ec != null ? e.Ec.Map.Name + (e.Ec.Resting ? "   (resting after " + e.Ec.Timeouts + " timeouts)" : "") : e.P != null && e.P.Ec != null ? "have one, not open (" + Scrub(e.DriverWhy) + ")" : "none for board " + e.Board + " - EC is never touched here"));
+            // Whether the map was believed, and on what evidence. Nothing is written to a controller that has
+            // not recognised its own registers here, so this line is the difference between a board the EC
+            // route can rescue and one where it would have been writing into the dark.
+            if (e.Ec != null) sb.AppendLine("  ec proof:    " + (e.EcVerified ? "fits — " : "REJECTED — ") + Scrub(e.EcProof));
             sb.AppendLine("  needs:       " + (e.P != null && e.P.DriverFor != DriverFor.None ? e.P.DriverFor.ToString() : "nothing the mailbox cannot do") + "   fan route: " + e.Route);
             if (e.Cpu == null && e.Ec == null) return;
             sb.AppendLine();
@@ -208,8 +212,30 @@ namespace Ohman {
             CpuTelemetry t = null;
             try { t = e.Cpu != null ? e.Cpu.Poll() : null; } catch (Exception ex) { sb.AppendLine("  cpu poll failed: " + Scrub(ex.Message)); }
             if (t != null) {
-                System.Threading.Thread.Sleep(600);
+                // The die answers in microseconds and the panel shows one reading every two seconds, so "why does
+                // it jump around" is the first thing anybody will ask. Sample it properly, once, and let the
+                // spread answer: a single glance at this sensor is one draw from the distribution below.
+                var series = new List<int>();
+                DateTime until = DateTime.UtcNow.AddSeconds(2);
+                while (DateTime.UtcNow < until) {
+                    try { CpuTelemetry s2 = e.Cpu.Poll(); if (!double.IsNaN(s2.DieTemp)) series.Add((int)Math.Round(s2.DieTemp)); } catch { break; }
+                    System.Threading.Thread.Sleep(25);
+                }
+                System.Threading.Thread.Sleep(600);      // the energy counter needs a window it can divide by
                 try { CpuTelemetry t2 = e.Cpu.Poll(); if (!double.IsNaN(t2.Watts)) t.Watts = t2.Watts; if (!double.IsNaN(t2.DieTemp)) t.DieTemp = t2.DieTemp; } catch { }
+                if (series.Count > 2) {
+                    var sorted = new List<int>(series);
+                    sorted.Sort();
+                    int hot = e.P != null ? e.P.Guard.CpuHot : 90, over = 0;
+                    foreach (int x in series) if (x >= hot) over++;
+                    sb.AppendLine("  die over 2 s:    " + series.Count + " samples · min " + sorted[0] + " · median " + sorted[sorted.Count / 2]
+                        + " · max " + sorted[sorted.Count - 1] + " · spread " + (sorted[sorted.Count - 1] - sorted[0]) + " degrees"
+                        + "   at or above " + hot + ": " + over + " of " + series.Count);
+                    sb.AppendLine("  first 40:        " + string.Join(" ", new List<string>(series.ConvertAll(delegate(int x) { return x.ToString(); })).GetRange(0, Math.Min(40, series.Count)).ToArray()));
+                    sb.AppendLine("  The spread is the sensor answering faster than anything can be shown: any work on the");
+                    sb.AppendLine("  machine lifts it tens of degrees for a few milliseconds. The panel, the fan curve and");
+                    sb.AppendLine("  the thermal guard all follow the median of three readings, so a lone spike drives nothing.");
+                }
                 double acpi = double.NaN;
                 try {
                     var cat = new PerformanceCounterCategory("Thermal Zone Information");

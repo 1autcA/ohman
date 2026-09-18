@@ -32,8 +32,15 @@ namespace Ohman {
 
     /// <summary>The CPU's registers behind an interface, so the preview build can pretend to have them.</summary>
     public abstract class CpuRegisters : IDisposable {
+        readonly object sync = new object();
         public abstract string Describe { get; }
-        public abstract CpuTelemetry Poll();
+        /// <summary>One reading. Serialised, because two threads do this: the sensor loop every couple of
+        /// seconds, and the driver check eighty times in two when somebody presses Troubleshoot. The energy
+        /// counter is a difference against the last reading and the last time, so two callers sharing one
+        /// instance without this take each other's measurement window and both get a number the package
+        /// cannot draw.</summary>
+        public CpuTelemetry Poll() { lock (sync) return PollCore(); }
+        protected abstract CpuTelemetry PollCore();
         public abstract void Dispose();
 
         /// <summary>The vendor string the kernel recorded at boot; no CPUID instruction needed from here.</summary>
@@ -92,7 +99,7 @@ namespace Ohman {
             return ok;
         }
 
-        public override CpuTelemetry Poll() {
+        protected override CpuTelemetry PollCore() {
             var t = new CpuTelemetry();
             ulong v;
             if (tjMax == 0 && Read(IA32_TEMPERATURE_TARGET, out v)) { tjMax = (int)((v >> 16) & 0xFF); if (tjMax == 0) tjMax = 100; }
@@ -146,7 +153,7 @@ namespace Ohman {
             } finally { if (held) { try { pci.ReleaseMutex(); } catch { } } }
         }
 
-        public override CpuTelemetry Poll() {
+        protected override CpuTelemetry PollCore() {
             var t = new CpuTelemetry();
             uint r;
             if (Smn(THM_TCON_CUR_TMP, out r)) {
@@ -168,7 +175,7 @@ namespace Ohman {
         readonly Random rnd = new Random();
         double temp = 52;
         public override string Describe { get { return "simulated"; } }
-        public override CpuTelemetry Poll() {
+        protected override CpuTelemetry PollCore() {
             temp = Math.Max(38, Math.Min(88, temp + rnd.Next(-2, 3)));
             return new CpuTelemetry { DieTemp = temp, TjMax = 100, Pl1 = 45, Pl2 = 115, Pl1On = true, Pl2On = true, Watts = 12 + rnd.Next(0, 9), Throttle = temp > 84 ? "power limit" : "" };
         }

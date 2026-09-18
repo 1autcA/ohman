@@ -177,37 +177,49 @@ namespace Ohman {
         }
 
         // ---------- installing ----------
-        static string SetupPath { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, SetupAsset); } }
+        /// <summary>Where the installer is downloaded to. A name nothing can predict, because the folder Ohman
+        /// runs from is usually the one it was downloaded to and is therefore writable by the user: a fixed name
+        /// there can be waited for.</summary>
+        static string NewSetupPath() {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Program.FileStem + "." + Guid.NewGuid().ToString("N") + ".setup.exe");
+        }
 
         /// <summary>Fetch the signed installer from its author's releases, check the signature, run it silently.
         /// The caller is elevated (app.manifest), and CreateProcess hands that token down, so there is no second
         /// UAC prompt. progress gets one short line per step for the row in Settings.</summary>
         public static DriverInstallResult Install(Action<string> progress, out string error) {
             error = null;
-            string setup = SetupPath;
+            string setup = NewSetupPath();
             try {
                 Say(progress, "finding the installer…");
                 Release r = Update.LatestOf(SetupRepo, SetupAsset);
                 if (r == null || string.IsNullOrEmpty(r.AssetUrl)) throw new Exception("could not find " + SetupAsset + " on " + SetupRepo);
                 Say(progress, "downloading " + (r.Size > 0 ? (r.Size / 1024 / 1024.0).ToString("0.0") + " MB" : "the installer") + "…");
                 Update.Download(r.AssetUrl, setup, r.Size);
-                Say(progress, "checking the signature…");
-                string signer;
-                if (!Signed(setup, out signer)) throw new Exception("the installer's signature is not " + Signer + (signer != null ? " (it is " + signer + ")" : ""));
-                // 2.2.0 upgrades 2.1.0 in place; anything older has to go first, which is what the other apps
-                // that bundle this installer do unconditionally.
-                Version have = InstalledVersion();
-                if (have != null && have < new Version(2, 1, 0)) {
-                    Say(progress, "removing PawnIO " + have + "…");
-                    Run(setup, "-uninstall -silent");
-                }
-                Say(progress, "installing…");
-                int rc = Run(setup, "-install -silent");
-                Log.Write("PawnIO installer exit code " + rc);
-                switch (rc) {
-                    case 0: case 183: return Installed ? DriverInstallResult.Installed : Fail("the installer returned " + rc + " but left no installation behind", out error);   // 183 = ERROR_ALREADY_EXISTS
-                    case 3010: case 1072: return DriverInstallResult.RestartNeeded;   // ERROR_SUCCESS_REBOOT_REQUIRED, ERROR_SERVICE_MARKED_FOR_DELETE
-                    default: return Fail("the installer returned " + PawnIoModule.Win32(rc), out error);
+                // Checked and launched through one open handle. Checking a path and then running that path are
+                // two different files if anything on the machine is watching for the gap between them, and this
+                // one runs with Ohman's token: the signature is the whole of what stands between a download and
+                // administrator. FileShare.Read lets Windows map the image to execute it and lets nothing
+                // rewrite or replace it while we hold it.
+                using (new FileStream(setup, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+                    Say(progress, "checking the signature…");
+                    string signer;
+                    if (!Signed(setup, out signer)) throw new Exception("the installer's signature is not " + Signer + (signer != null ? " (it is " + signer + ")" : ""));
+                    // 2.2.0 upgrades 2.1.0 in place; anything older has to go first, which is what the other apps
+                    // that bundle this installer do unconditionally.
+                    Version have = InstalledVersion();
+                    if (have != null && have < new Version(2, 1, 0)) {
+                        Say(progress, "removing PawnIO " + have + "…");
+                        Run(setup, "-uninstall -silent");
+                    }
+                    Say(progress, "installing…");
+                    int rc = Run(setup, "-install -silent");
+                    Log.Write("PawnIO installer exit code " + rc);
+                    switch (rc) {
+                        case 0: case 183: return Installed ? DriverInstallResult.Installed : Fail("the installer returned " + rc + " but left no installation behind", out error);   // 183 = ERROR_ALREADY_EXISTS
+                        case 3010: case 1072: return DriverInstallResult.RestartNeeded;   // ERROR_SUCCESS_REBOOT_REQUIRED, ERROR_SERVICE_MARKED_FOR_DELETE
+                        default: return Fail("the installer returned " + PawnIoModule.Win32(rc), out error);
+                    }
                 }
             } catch (Exception ex) { return Fail(ex.Message, out error); }
             finally { try { if (File.Exists(setup)) File.Delete(setup); } catch { } }

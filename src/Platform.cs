@@ -150,15 +150,21 @@ namespace Ohman {
         /// classic addresses written there corrupt its state (OmenCore issue #60: Caps Lock panic blink).</summary>
         public static readonly string[] OmenMax = { "8D41", "8D42", "8D87", "8D88" };
 
-        /// <summary>Boards whose EC follows the OmenMon / omen-fan map. Board ids are assigned in order, so the
-        /// generation is in the id: 84xx (2018) through 8Bxx (2022) is where every published EC map was made -
-        /// OmenMon on 8A14, omen-fan on a 16-c0xxx, OmenCore's field reports on 8574 - and the 2025 MAX boards
-        /// prove that later ids cannot be assumed to match. Beyond 8B a board gets a map only by being probed.</summary>
-        public static bool EcLegacy(string board) {
-            if (string.IsNullOrEmpty(board) || board.Length < 4 || !In(Omen, board) || In(OmenMax, board)) return false;
-            int gen;
-            if (!int.TryParse(board.Substring(0, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out gen)) return false;
-            return gen >= 0x84 && gen <= 0x8B;
+        /// <summary>Whether the legacy EC map is worth *trying* on this board.
+        ///
+        /// Being a candidate earns a board nothing on its own. EmbeddedController.Verify has to recognise its own
+        /// registers on the actual machine - the control register holding a fan-control state and nothing else,
+        /// the temperature register agreeing with the CPU's own sensor, the tachometers agreeing with the
+        /// firmware - before a single byte is written anywhere. That proof is worth more than any list we could
+        /// keep: it is taken on the laptop in front of us rather than inferred from a board id, and it is the
+        /// reason this can be generous where an earlier version guessed from the first two hex digits of the id
+        /// and handed the map to ninety boards nobody had touched.
+        ///
+        /// The one hard exclusion is the 2025 OMEN MAX, where the registers are somewhere else entirely and
+        /// writing these addresses corrupts EC state until the Caps Lock light blinks (OmenCore issue #60).
+        /// There is nothing to prove there and no reason to go looking.</summary>
+        public static bool EcCandidate(string board) {
+            return !string.IsNullOrEmpty(board) && !In(OmenMax, board);
         }
     }
 
@@ -221,9 +227,18 @@ namespace Ohman {
             p.TdpBase = haveInfo ? info.DefaultConcurrentTdp : 0;
             p.HasPowerGain = p.TdpBase > 0;
             p.HasGpuPower = false;                                        // the engine probes 0x21 and turns this on when the firmware answers
-            if (Families.EcLegacy(board)) p.Ec = EcMap.Legacy();
+            return Equip(p, board);
+        }
+
+        /// <summary>The two facts that are about the driver rather than about the firmware, applied to every
+        /// profile however it was built. They used to be set only on generic profiles, so the moment a board was
+        /// verified by its owner and promoted into Known it silently lost its EC map and its nudge - on 878A,
+        /// the one board the EC route exists for, being verified would have taken its fan control away.</summary>
+        static PlatformProfile Equip(PlatformProfile p, string board) {
+            if (p == null) return null;
+            if (p.Ec == null && Families.EcCandidate(board)) p.Ec = EcMap.Legacy();
             DriverFor need;
-            if (DriverNeeds.TryGetValue(board ?? "", out need)) p.DriverFor = need;
+            if (p.DriverFor == DriverFor.None && DriverNeeds.TryGetValue(board ?? "", out need)) p.DriverFor = need;
             return p;
         }
 
@@ -277,7 +292,7 @@ namespace Ohman {
         }
 
         public static PlatformProfile Find(string board) {
-            foreach (var p in Known) foreach (var b in p.Boards) if (string.Equals(b, board, StringComparison.OrdinalIgnoreCase)) { Floor(p); return p; }
+            foreach (var p in Known) foreach (var b in p.Boards) if (string.Equals(b, board, StringComparison.OrdinalIgnoreCase)) { Floor(p); return Equip(p, board); }
             return null;
         }
         /// <summary>Keep a profile's own curve off the 1..17 band, which is a speed no fan holds. 0 is left alone: it

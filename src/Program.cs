@@ -172,51 +172,28 @@ namespace Ohman {
         }
 
         /// <summary>--support: the report the Settings button produces, for anyone who would rather not open the
-        /// window. Builds its own engine because this runs before the single-instance guard.</summary>
-        static int WriteSupport(string[] args) {
+        /// window. --driver: the same thing for the driver alone. Both build their own engine, because they run
+        /// before the single-instance guard and have to work beside a live Ohman.</summary>
+        static int WriteSupport(string[] args) { return WriteReport(args, "support-info.txt", Support.Report, "the firmware was not asked anything"); }
+        static int WriteDriverReport(string[] args) { return WriteReport(args, "driver-check.txt", Support.DriverReport, "the driver and the firmware were not asked anything"); }
+
+        static int WriteReport(string[] args, string fileName, Func<Engine, string> build, string notElevated) {
             bool ownConsole = OpenConsole();
             bool elev = false;
             try { elev = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } catch { }
             bool wantDemo = false;
             foreach (string a in args) if (a.ToLowerInvariant() == "--demo") wantDemo = true;
             IHardware hw2 = (wantDemo || !elev) ? (IHardware)new DemoHardware() : new Bios();
-            if (!elev) Console.WriteLine("NOT ELEVATED - the firmware was not asked anything. Run this from an administrator prompt.\n");
+            if (!elev) Console.WriteLine("NOT ELEVATED - " + notElevated + ". Run this from an administrator prompt.\n");
             var s2 = Settings.Load();
             s2.NoPersist = true;
             var eng = new Engine(hw2, s2);
             try { eng.Init(false); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }   // false: describe the laptop, do not touch it
             string rep;
-            try { rep = Support.Report(eng); } catch (Exception ex) { rep = "support report failed: " + ex; }
+            try { rep = build(eng); } catch (Exception ex) { rep = "report failed: " + ex; }
             Console.WriteLine(rep);
             try {
-                string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "support-info.txt");
-                System.IO.File.WriteAllText(p, rep);
-                Console.WriteLine("saved to " + p);
-            } catch (Exception ex) { Console.WriteLine("could not save: " + ex.Message); }
-            try { eng.Dispose(); } catch { }
-            HoldConsole(ownConsole);
-            return 0;
-        }
-
-        /// <summary>--driver: the driver, the CPU registers and the EC, asked and printed. Read-only, and it runs
-        /// beside a live Ohman: the device takes any number of handles and the EC lock serialises the two.</summary>
-        static int WriteDriverReport(string[] args) {
-            bool ownConsole = OpenConsole();
-            bool elev = false;
-            try { elev = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } catch { }
-            bool wantDemo = false;
-            foreach (string a in args) if (a.ToLowerInvariant() == "--demo") wantDemo = true;
-            IHardware hw2 = (wantDemo || !elev) ? (IHardware)new DemoHardware() : new Bios();
-            if (!elev) Console.WriteLine("NOT ELEVATED - the driver and the firmware were not asked anything. Run this from an administrator prompt.\n");
-            var s2 = Settings.Load();
-            s2.NoPersist = true;
-            var eng = new Engine(hw2, s2);
-            try { eng.Init(false); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }
-            string rep;
-            try { rep = Support.DriverReport(eng); } catch (Exception ex) { rep = "driver report failed: " + ex; }
-            Console.WriteLine(rep);
-            try {
-                string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "driver-check.txt");
+                string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), fileName);
                 System.IO.File.WriteAllText(p, rep);
                 Console.WriteLine("saved to " + p);
             } catch (Exception ex) { Console.WriteLine("could not save: " + ex.Message); }

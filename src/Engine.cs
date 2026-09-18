@@ -327,7 +327,16 @@ namespace Ohman {
         public volatile string DriverProgress = "";         // its current step, for the row
         public enum FanRoute { Mailbox, Ec }
         public FanRoute Route = FanRoute.Mailbox;           // where fan levels go
-        public bool DriverReady { get { return Cpu != null || Ec != null; } }
+        bool ecVerified;                                    // the EC recognised its own registers on this machine
+        public string EcProof = "";                         // what it made of them, for the report
+        public bool EcVerified { get { return ecVerified; } }
+        public bool DriverReady { get { return Cpu != null || (Ec != null && ecVerified); } }
+        /// <summary>The installed driver's version, read when the driver state changes rather than on every
+        /// repaint: the row asking the registry four times a second for two values that change twice in the
+        /// life of the process is exactly the kind of cost this app measures and removes.</summary>
+        public Version DriverVersion;
+        public bool DriverInstalled { get { return Hw.IsDemo ? DriverReady : DriverVersion != null; } }
+        public bool DriverOutdated { get { return DriverVersion != null && DriverVersion < PawnIo.MinVersion; } }
 
         ManagementEventWatcher watcher;
         System.Threading.Timer heartbeat;
@@ -769,18 +778,23 @@ namespace Ohman {
         void InitDriver() {
             CloseDriver();
             DriverWhy = "";
+            EcProof = "";
+            DriverVersion = Hw.IsDemo ? null : PawnIo.InstalledVersion();
             if (Hw.IsDemo) {
-                // --board 878A exists to show what an owner of that board would see, and what they see first is
-                // the nudge; so a simulated board that asks for the driver simulates not having it.
-                if (Platforms.BoardOverride != null && P.DriverFor != DriverFor.None) { DriverWhy = "not installed"; return; }
+                // A simulated board that asks for the driver simulates not having it, so the preview shows the
+                // row its owner would see rather than the one this machine happens to be in. Nothing here needs
+                // to know how the board was chosen; the profile already says whether it wants a driver.
+                if (P.DriverFor != DriverFor.None) { DriverWhy = "not installed"; return; }
                 Cpu = new DemoCpu();
                 Ec = new EmbeddedController(new DemoEcPorts(), EcMap.Legacy());
+                ecVerified = true;
+                EcProof = "simulated";
                 Route = ChooseRoute();
                 return;
             }
             if (!S.DriverUse) { DriverWhy = "switched off"; return; }
-            if (!PawnIo.Installed) { DriverWhy = "not installed"; return; }
-            if (PawnIo.Outdated) { DriverWhy = "PawnIO " + PawnIo.InstalledVersion() + " is older than " + PawnIo.MinVersion + "; update it"; return; }
+            if (DriverVersion == null) { DriverWhy = "not installed"; return; }
+            if (DriverOutdated) { DriverWhy = "PawnIO " + DriverVersion + " is older than " + PawnIo.MinVersion + "; update it"; return; }
             string why;
             Cpu = CpuRegisters.Open(out why);
             if (Cpu == null) {
@@ -794,23 +808,44 @@ namespace Ohman {
             if (S.DriverRestartPending) { S.DriverRestartPending = false; S.Save(); }
             if (P.Ec != null) {
                 PawnIoModule m = PawnIo.Open("LpcACPIEC", out why);
-                if (m != null) Ec = new EmbeddedController(new PawnIoEcPorts(m), P.Ec);
-                else Log.Write("driver: EC module unavailable: " + why);
+                if (m == null) Log.Write("driver: EC module unavailable: " + why);
+                else {
+                    // Nothing is written to this controller until it has recognised its own registers here. The
+                    // firmware's fan speeds and the CPU's own temperature are both already in hand, so the map
+                    // can be checked against two independent readings of the same machine rather than against a
+                    // list of board ids somebody once wrote down.
+                    var ec = new EmbeddedController(new PawnIoEcPorts(m), P.Ec);
+                    int[] rpm = null;
+                    double die = double.NaN;
+                    try { rpm = Hw.GetFanLevels(); } catch { }
+                    try { if (Cpu != null) die = Cpu.Poll().DieTemp; } catch { }
+                    ecVerified = ec.Verify(rpm, die, out EcProof);
+                    Log.Write("driver: the EC map " + (ecVerified ? "fits this board — " : "does NOT fit this board — ") + EcProof);
+                    Ec = ec;
+                }
             }
             Route = ChooseRoute();
-            Log.Write("driver: PawnIO " + PawnIo.InstalledVersion() + " · cpu=" + Cpu.Describe + " · ec=" + (Ec != null ? P.Ec.Name : "no map for this board") + " · fan route " + Route);
+            Log.Write("driver: PawnIO " + DriverVersion + " · cpu=" + Cpu.Describe + " · ec=" + (Ec == null ? "no map for this board" : ecVerified ? P.Ec.Name : "map rejected") + " · fan route " + Route);
         }
         void CloseDriver() {
             try { if (Cpu != null) Cpu.Dispose(); } catch { }
             try { if (Ec != null) Ec.Dispose(); } catch { }
             Cpu = null; Ec = null;
+            ecVerified = false;
             Route = FanRoute.Mailbox;
         }
         /// <summary>Where fan levels should go: the EC only when this board's mailbox cannot take them, whether
-        /// the profile said so or the firmware has just shown it.</summary>
+        /// the profile said so or the firmware has just shown it, and only once the EC has proved it is the one
+        /// the map describes.</summary>
         FanRoute ChooseRoute() {
             bool need = (P.DriverFor & DriverFor.FanLevels) != 0 || fanLevelsRefused;
-            Route = (Ec != null && need && !Ec.Resting) ? FanRoute.Ec : FanRoute.Mailbox;
+            FanRoute was = Route;
+            Route = (Ec != null && ecVerified && need && !Ec.Resting) ? FanRoute.Ec : FanRoute.Mailbox;
+            // A route that has just taken over starts with a clean slate. fanWriteFailures counts what the
+            // mailbox refused, and AutoTick backs off to once a minute once it reaches three - which on the one
+            // board this route exists for is permanently, so the curve would answer a temperature change once a
+            // minute for the rest of the session on the machine the route was written to rescue.
+            if (Route == FanRoute.Ec && was != FanRoute.Ec) { fanWriteFailures = 0; fanFailureShown = false; }
             return Route;
         }
 
@@ -1111,9 +1146,11 @@ namespace Ohman {
         // feeds in, force max fan when the CPU is >= 90 C, the chassis sensor >= 56 C, or the fans read stalled while warm.
         // Release only after 60 s of cool readings. Would have caught the 2026-09-08 incident within a minute.
         public volatile bool GuardActive;
-        public double CpuTemp = double.NaN;               // set by the UI sensor loop
+        public double CpuTemp = double.NaN;               // set by the UI sensor loop; the median of three readings
+        public double CpuTempNow = double.NaN;            // the single reading behind it, for the report when somebody says it jumps
         public int GuardChassis = -1;
         DateTime guardSafeSince = DateTime.MinValue;
+        int guardHotTicks;                 // consecutive ten-second ticks that have judged the machine hot
         bool chassisScaleKnown;            // the 0x23 sensor has read below the release threshold at least once, so it is on the scale the profile assumes
         System.Threading.Timer guard;
 
@@ -1143,7 +1180,16 @@ namespace Ohman {
                 bool chassisUsable = P.Verified || chassisScaleKnown;
                 bool hot = (cpuKnown && t >= P.Guard.CpuHot) || (chassisUsable && c >= P.Guard.ChassisHot);
                 bool stalled = cpuKnown && t >= P.Guard.StallCpu && f[0] >= 0 && f[1] >= 0 && (f[0] + f[1]) < P.Guard.StallLevelSum;
-                if ((hot || stalled) && !GuardActive) {
+                // Two ticks, not one. What engages this is a reading of a sensor that answers in microseconds,
+                // and one sample landing inside a spike was enough to force maximum fan on an idle laptop -
+                // three times in one evening on the reference machine, and the third would not release, because
+                // release needs sixty consecutive cool seconds and the next spike always came first. Sensors
+                // hands over the median of three readings now, so this is the second layer rather than the only
+                // one. Twenty seconds is still far inside the time the chips take to come to harm, and they
+                // throttle themselves long before that; what this guard is really for is a chassis heating up
+                // and fans that have stopped, neither of which happens in ten seconds.
+                if (hot || stalled) guardHotTicks++; else guardHotTicks = 0;
+                if ((hot || stalled) && !GuardActive && guardHotTicks >= 2) {
                     GuardActive = true;
                     guardSafeSince = DateTime.MinValue;
                     Log.Write("THERMAL GUARD engaged: cpu=" + (cpuKnown ? t.ToString("0") : "?") + " chassis=" + c + " fans=" + f[0] + "/" + f[1] + (stalled ? " (stalled)" : ""));
@@ -1441,8 +1487,9 @@ namespace Ohman {
             sb.AppendLine("settings: mode=" + ModeName + " (BIOS 0x" + ModeByte.ToString("X2") + (OnBattery ? ", DC" : ", AC") + ") fan=" + S.Fan + " " + S.Fan1 + "/" + S.Fan2 + " tdp=" + CurrentTdp + "W gpu=" + EffectiveGpu + (S.GpuAuto ? "(auto)" : "") + " key=" + KeyId + "/" + KeyData + "→" + S.Key + " ecoCool=" + S.EcoCool);
             sb.AppendLine("graphics: " + (GpuMode >= 0 && GpuMode < 4 ? GpuModeNames[GpuMode] : "unknown") + " (offered mask 0x" + Info.GpuModes.ToString("X2") + ")" + (GpuModePending >= 0 ? " -> " + GpuModeNames[GpuModePending] + " after restart" : ""));
             sb.AppendLine("lighting: " + (Light == null ? "none" : Light.Describe + " mode=" + S.Light + " level=" + S.LightLevel + " colours=" + S.LightColors + " windowsControl=" + WinLighting.HasControl));
-            sb.AppendLine("fan drive: written " + curLevel1 + "/" + curLevel2 + "  cpu " + Fmt(CpuTemp) + "  gpu " + Fmt(GpuTemp) + "  ir " + Fmt(IrTemp) + "  guard=" + GuardActive + "  writeFailures=" + fanWriteFailures + "  route=" + Route);
-            sb.AppendLine("driver: " + (DriverReady ? "PawnIO " + (Hw.IsDemo ? "simulated" : "" + PawnIo.InstalledVersion()) + " · cpu " + (Cpu != null ? Cpu.Describe : "none") + " · ec " + (Ec != null ? Ec.Map.Name + (Ec.Resting ? " (resting)" : "") : "none") : "none (" + DriverWhy + ")"));
+            sb.AppendLine("fan drive: written " + curLevel1 + "/" + curLevel2 + "  cpu " + Fmt(CpuTemp) + " (last single reading " + Fmt(CpuTempNow) + ")  gpu " + Fmt(GpuTemp) + "  ir " + Fmt(IrTemp) + "  guard=" + GuardActive + "  writeFailures=" + fanWriteFailures + "  route=" + Route);
+            sb.AppendLine("driver: " + (DriverReady ? "PawnIO " + (Hw.IsDemo ? "simulated" : "" + DriverVersion) + " · cpu " + (Cpu != null ? Cpu.Describe : "none")
+                + " · ec " + (Ec == null ? "none" : (ecVerified ? Ec.Map.Name : "map rejected") + (Ec.Resting ? " (resting)" : "") + " — " + EcProof) : "none (" + DriverWhy + ")"));
             sb.AppendLine("last heartbeat: " + (LastHeartbeat == DateTime.MinValue ? "never" : LastHeartbeat.ToString("HH:mm:ss")) + "   last key event: " + (LastEventTime == DateTime.MinValue ? "none" : LastEventId + "/" + LastEventData + " at " + LastEventTime.ToString("HH:mm:ss")));
             return sb.ToString();
         }

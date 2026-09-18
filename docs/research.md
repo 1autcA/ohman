@@ -306,13 +306,37 @@ read back - an EC that does not keep `06` there is not one this map fits, and th
 mailbox after three such failures. Release is omen-fan's sequence: levels 0, `OMCC=00`, `XFCD=78`. The
 mailbox's max-fan flag (0x27) is left in charge of max fan and of the thermal guard: it works on these boards.
 
-**Where the map is trusted.** Board ids are assigned in order, so the generation is in the id. Every published
-map was made on 84xx-8Bxx boards (OmenMon on 8A14, omen-fan on a 16-c0xxx, OmenCore's field report on 8574),
-so `Families.EcLegacy` says yes to those and no to everything later. The reason for the "no" is OmenCore
-issue #60: on the 2025 OMEN MAX (`8D41`, `8D42`, `8D87`) the EC is laid out differently and the classic
-addresses written there corrupt EC state until the Caps Lock LED blinks in panic. Reads there are not useful
-either, so those boards get no map at all. A later board earns a map by a read-only probe (`tools\
-drivertest.cmd`: EC rpm beside mailbox 0x2D, EC CPUT beside the die temperature) matching on a real machine.
+**Where the map is trusted: nowhere, until it proves itself.** The first version of this decided from the hex
+prefix of the board id — every published map was made on an 84xx–8Bxx board (OmenMon on 8A14, omen-fan on a
+16-c0xxx, OmenCore's field report on 8574), so those were in and everything later was out. That is a guess
+about what a number near another number means, and it was wrong in both directions: too generous, because it
+handed the map to ninety boards nobody had touched, and too mean, because the 2024 Transcend 14 turns out to
+follow it exactly.
+
+So the map is now checked on the machine, in `EmbeddedController.Verify`, before a single byte is written
+anywhere. Four questions, cheapest first:
+
+- `OMCC` is a two-valued register. If it holds anything but `0x00` or `0x06`, this address is not `OMCC` here —
+  and that is the register that takes the fans away from the firmware, so it is the one worth checking first.
+- `CPUT` has to read like a temperature, and has to agree within 25 °C with the CPU's own die sensor, which the
+  driver has already given us.
+- `RPM1`/`RPM3` have to read like fan speeds, and have to agree within 25 % with the firmware's own `0x2D`.
+
+Measured on 8C58 (2024 Transcend 14), which the old prefix rule would have refused:
+
+```
+ec proof:    fits — CPU 69 C, fans 3232/3218 rpm, control 0x06
+ec fan rpm:  3242 / 3227   mailbox 0x2D: 3200 / 3200
+ec temps:    CPU 62 C      die 62 C
+```
+
+Agreement within 1.3 % on the tachometers and exact on the temperature. `tools\drivertest.cmd` prints those
+lines, which is why a contributed `drivertest.txt` is now the evidence a board needs.
+
+The one hard exclusion left is the 2025 OMEN MAX (`8D41`, `8D42`, `8D87`, `8D88`): OmenCore issue #60 reports
+that the registers are somewhere else entirely and that writing these addresses corrupts EC state until the
+Caps Lock light blinks. There is nothing to prove there and no reason to go looking, so those boards are never
+opened at all.
 
 **Why the EC is treated gently.** It also answers the battery, the lid and the keyboard. OmenCore 2.8.6 traced
 a "Critical Battery Trigger Met" shutdown on plugged-in laptops to ACPI Event 13 - EC transactions timing out
@@ -324,3 +348,37 @@ Access_EC` mutex is held for every transaction; OmenMon, LibreHardwareMonitor, O
 **Not done, on purpose.** Undervolting (the module allows `MSR_OC_MAILBOX`, HP's BIOS locks it on nearly
 every board). Keyboard lighting through the EC (`0xB2..0xBE`: OmenCore reports hard crashes on a 17-ck2xxx).
 Any EC write on a board without a map.
+
+### Reading the die is an observation that changes it (2026-09-18)
+
+The first driver build read the package sensor immediately after the ACPI thermal-zone performance counters,
+because that is where the sensor loop already sat. That is the worst possible moment. Measured at rest on the
+reference machine, 8C58, Core Ultra 9 185H, TjMax 110:
+
+| how the package sensor (`0x1B1`) was sampled | median | max | floor |
+|---|---|---|---|
+| free-running, 25 ms apart (two runs) | 58, 61 | 99, 102 | 57, 54 |
+| immediately after one perflib counter read | 68 | 95 | 55 |
+
+The floor is the same either way, and the floor is the truth: this laptop idles at 54–55 °C. The die answers in
+under a millisecond and settles over a few hundred, so a perflib round trip — or anything else the machine
+happens to be doing — lifts the reading by tens of degrees until it settles, and a reading taken straight
+afterwards reports that transient instead of the temperature. A series sampled out of process startup shows it
+as a decay curve: `76 70 72 85 91 78 72 75 66 73 70 81 58 72 66 70 61 55 55 54 54 55 55`.
+
+Two things follow, and both are in `Sensors.Loop`. The die is read at the top of the tick, a whole interval
+after that thread last did anything. And every consumer — the panel, the fan curve, the thermal guard — follows
+the **median of three readings** rather than one, because about one reading a minute still lands inside somebody
+else's burst (3 of 64 samples at or above 90 while the floor was 55), and a single one of those was enough to
+move the fans and to engage the thermal guard. The guard could then never release: release needs sixty
+consecutive cool seconds and the next spike always came first. It engaged three times in one evening on an idle
+laptop, the third time at `cpu=102 chassis=45 fans=34/34`.
+
+The guard now also needs two consecutive ten-second ticks rather than one. That is a second layer, not the fix.
+Twenty seconds is far inside the time the chips take to come to any harm and they throttle themselves long
+before it; and what the guard is actually for — a chassis heating up, fans that have stopped — does not happen
+in ten seconds either.
+
+For the record: LibreHardwareMonitor and OmenCore read the same registers with the same decode (OmenCore's own
+comment is "package temperature (0x1B1) — more stable than per-core"), and neither smooths what it displays.
+Neither of them reads the sensor immediately after a WMI call either.

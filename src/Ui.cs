@@ -110,6 +110,8 @@ namespace Ohman {
         ToggleButton tgDriver;
         FrameworkElement driverBanner, driverClose, driverRow;
         Run runCpuHead, runCpuWatts, runCpuTail;    // the CPU caption in three pieces, so the limits can hang off the wattage alone
+        enum DriverState { Busy, NotInstalled, RestartPending, Off, Outdated, Ready, Broken }
+        DriverState driverState = DriverState.NotInstalled;   // what the row is showing, so the click knows what it means
         Brush subCpuBrush;
         string driverRowFor = "?";          // the state the row was last built for, so Refresh does not rebuild it every tick
         Border updateRow;
@@ -696,20 +698,24 @@ namespace Ohman {
                     + "Afterwards you can delete " + Program.AppName + ".exe and nothing of it is left behind.";
                 if (MessageBox.Show(IsVisible ? (Window)this : null, ask, Program.DisplayName,
                         MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                // The driver is the one thing Ohman may have put on the machine outside its own folder. Only when
+                // it was us, and only with a yes: FanControl or LibreHardwareMonitor may be using the same one.
+                // Asked here, beside the other question, so that both answers are in before any work starts -
+                // running somebody's uninstaller takes as long as it takes, and the thread that has to paint the
+                // window is not the thread to wait for it on.
+                bool alsoDriver = E.S.DriverInstalledByOhman && !E.Hw.IsDemo && E.DriverInstalled
+                    && MessageBox.Show(IsVisible ? (Window)this : null,
+                        "Also remove the driver " + Program.DisplayName + " installed?\n\nSay No if another program (FanControl, LibreHardwareMonitor) uses it.",
+                        Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
                 btnReset.Text = "resetting...";
                 Slow(delegate {
                     string what = "";
                     try { what = E.FactoryReset(); } catch (Exception ex) { Log.Write("factory reset: " + ex.Message); }
+                    if (alsoDriver) {
+                        try { if (E.RemoveDriver()) what += "  - removed the driver\n"; } catch (Exception ex) { Log.Write("reset driver: " + ex.Message); }
+                    }
                     Dispatcher.BeginInvoke((Action)delegate {
                         try { SetAutostart(false); } catch (Exception ex) { Log.Write("reset autostart: " + ex.Message); }
-                        // The driver is the one thing Ohman may have put on the machine outside its own folder. Only
-                        // when it was us, and only with a yes: FanControl or LibreHardwareMonitor may be using it.
-                        if (E.S.DriverInstalledByOhman && !E.Hw.IsDemo && PawnIo.Installed
-                            && MessageBox.Show(IsVisible ? (Window)this : null,
-                                "Also remove the driver " + Program.DisplayName + " installed?\n\nSay No if another program (FanControl, LibreHardwareMonitor) uses it.",
-                                Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) {
-                            if (E.RemoveDriver()) what += "  - removed the driver\n";
-                        }
                         resetting = true;                    // ExitApp must delete the settings, not save them
                         string folder = "";
                         try { folder = System.IO.Path.GetDirectoryName(Log.Path); } catch { }
@@ -1670,26 +1676,29 @@ namespace Ohman {
         void UpdateDriverRow() {
             var S = E.S;
             bool demo = E.Hw.IsDemo;
-            bool installed = demo ? E.DriverReady : PawnIo.Installed;    // a simulated board that asks for the driver simulates not having it
+            bool installed = E.DriverInstalled;
             string title = "Hardware driver", sub, link = null, name = null;
             bool showSwitch = installed && !E.DriverBusy;
             // What it is for, in the words of somebody who does not know what a register is. "die temperature"
-            // is the accurate name and means nothing to the person deciding whether to install a driver.
-            string gains = (E.P.DriverFor & DriverFor.FanLevels) != 0
-                ? "fan levels on this board, more accurate CPU temperature & power limits"
-                : "more accurate CPU temperature, power limits & throttle reasons";
-            if (E.DriverBusy) sub = E.DriverProgress;
-            else if (!installed) { sub = "Adds " + gains; link = "Install"; }
-            else if (S.DriverRestartPending && !E.DriverReady) { sub = "Installed · restart Windows to finish"; link = "Restart now"; }
-            else if (!S.DriverUse) sub = "Off · adds " + gains;
-            else if (PawnIo.Outdated) { name = DriverName(); sub = " · needs " + PawnIo.MinVersion + " or newer"; link = "Update"; }
+            // is the accurate name and means nothing to the person deciding whether to install a driver. Only
+            // Intel gives up its power limits and its throttle reasons to the module we carry, so on a Ryzen
+            // this promises the one thing it can actually deliver rather than three.
+            bool intel = demo || CpuRegisters.Vendor().IndexOf("Intel", StringComparison.OrdinalIgnoreCase) >= 0;
+            string gains = (intel ? "more accurate CPU temperature, power limits & throttle reasons" : "a more accurate CPU temperature")
+                + ((E.P.DriverFor & DriverFor.FanLevels) != 0 ? ", and fan levels on this board" : "");
+            if (E.DriverBusy) { sub = E.DriverProgress; driverState = DriverState.Busy; }
+            else if (!installed) { sub = "Adds " + gains; link = "Install"; driverState = DriverState.NotInstalled; }
+            else if (S.DriverRestartPending && !E.DriverReady) { sub = "Installed · restart Windows to finish"; link = "Restart now"; driverState = DriverState.RestartPending; }
+            else if (!S.DriverUse) { sub = "Off · adds " + gains; driverState = DriverState.Off; }
+            else if (E.DriverOutdated) { name = DriverName(); sub = " · needs " + PawnIo.MinVersion + " or newer"; link = "Update"; driverState = DriverState.Outdated; }
             else if (E.DriverReady) {
                 // Said as what it is doing, not as what it opened. "CPU registers" answered a question nobody asked.
                 // The simulated build takes this branch too, so the preview shows the row people will actually see.
                 name = DriverName();
-                sub = " · " + (demo ? "simulated" : E.Route == Engine.FanRoute.Ec ? "fan levels and CPU temperature" : "CPU temperature and power limits");
+                sub = " · " + (demo ? "simulated" : E.Route == Engine.FanRoute.Ec ? "fan levels and CPU temperature" : intel ? "CPU temperature and power limits" : "CPU temperature");
+                driverState = DriverState.Ready;
                 if (!demo && S.DriverInstalledByOhman) link = "Remove";
-            } else { title = "Driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; }
+            } else { title = "Driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; driverState = DriverState.Broken; }
             string key = title + "|" + (name ?? "") + sub + "|" + (link ?? "") + "|" + showSwitch;
             if (key != driverRowFor) {
                 driverRowFor = key;
@@ -1712,8 +1721,8 @@ namespace Ohman {
             if (driverBanner.Visibility != want) { driverBanner.Visibility = want; if (cur == Page.Home) Remeasure(cur); }
         }
         /// <summary>"PawnIO 2.2.0", and never the fourth field: nobody needs the build number of somebody else's driver.</summary>
-        static string DriverName() {
-            Version v = PawnIo.InstalledVersion();
+        string DriverName() {
+            Version v = E.DriverVersion;
             return v == null ? "PawnIO" : "PawnIO " + (v.Build >= 0 ? v.ToString(3) : v.ToString());
         }
         /// <summary>The sub-line with the driver's name as a link to its source. Somebody who has just been asked to
@@ -1732,11 +1741,13 @@ namespace Ohman {
             catch (Exception ex) { ShowToast("Cannot open " + url + ": " + ex.Message, true); }
         }
         void DriverAction() {
-            string link = btnDriver.Text;
-            if (link == "Install" || link == "Update") InstallDriver();
-            else if (link == "Restart now") RestartWindows("the driver");
-            else if (link == "Troubleshoot") DriverCheck();
-            else if (link == "Remove") {
+            // On the state, not on the words. This used to compare btnDriver.Text against "Install", "Update"
+            // and the rest, which made the label load-bearing: rewording the row - which has happened twice
+            // already - would have disconnected the click from its action with nothing to notice it.
+            if (driverState == DriverState.NotInstalled || driverState == DriverState.Outdated) InstallDriver();
+            else if (driverState == DriverState.RestartPending) RestartWindows("the driver");
+            else if (driverState == DriverState.Broken) DriverCheck();
+            else if (driverState == DriverState.Ready) {
                 if (MessageBox.Show(IsVisible ? (Window)this : null,
                         "Remove the driver?\n\nOther programs may be using it too: FanControl and LibreHardwareMonitor install the same one. "
                         + Program.DisplayName + " goes back to the temperature Windows reports and the firmware's own fan control.",
@@ -1908,6 +1919,7 @@ namespace Ohman {
         bool sensorsSeen;
         void OnSensors(SensorSnapshot s) {
             E.CpuTemp = s.CpuTemp;
+            E.CpuTempNow = s.CpuTempNow;
             E.GpuTemp = s.GpuTemp;
             onBattery = s.OnBattery;
             UpdateTrayTemp(s.CpuTemp);
@@ -1933,10 +1945,10 @@ namespace Ohman {
         /// <summary>What the wattage is measured against, for the tooltip on it. Null without the driver: the
         /// limits are the CPU's own registers and nothing else on this machine will say what they are.</summary>
         static string PowerLimits(SensorSnapshot s) {
-            string a = double.IsNaN(s.Pl1) ? null : s.Pl1.ToString("0", CultureInfo.InvariantCulture) + " W continuously";
-            string b = double.IsNaN(s.Pl2) ? null : s.Pl2.ToString("0", CultureInfo.InvariantCulture) + " W in short bursts";
+            string a = double.IsNaN(s.Pl1) ? null : "PL1: " + s.Pl1.ToString("0", CultureInfo.InvariantCulture) + " W";
+            string b = double.IsNaN(s.Pl2) ? null : "PL2: " + s.Pl2.ToString("0", CultureInfo.InvariantCulture) + " W";
             if (a == null && b == null) return null;
-            return "This CPU is allowed " + (a != null && b != null ? a + " and " + b : (a ?? b));
+            return a != null && b != null ? a + " · " + b : (a ?? b);
         }
 
         void ReadHardwareAsync() {
@@ -2179,8 +2191,11 @@ namespace Ohman {
             try { if (osd != null) osd.Close(); } catch { }
             try { if (trayTempIcon != null) { IntPtr h = trayTempIcon.Handle; trayTempIcon.Dispose(); DestroyIcon(h); } } catch { }
             try { E.Park(quietExit); } catch { }   // before Dispose: the timers must still be alive to write
-            try { E.Dispose(); } catch { }
+            // Sensors first. Its thread reads the CPU's registers through a handle the engine owns, so disposing
+            // the engine first left a tick in flight holding a closed handle and wrote a driver failure into the
+            // log of every clean exit.
             try { sensors.Dispose(); } catch { }
+            try { E.Dispose(); } catch { }
             Log.Write("exit");
             // Last, because everything above still logs. The dialog said the log goes too, so it has to.
             if (resetting) { try { Log.Delete(); } catch { } }

@@ -38,3 +38,4 @@ body:
       options:
         - label: OMEN Gaming Hub is not running at the same time
         - label: I am running Ohman as administrator (the title bar does not say DEMO)
+        - label: The optional driver is installed (Settings &rarr; Driver). If it is, and the problem is a temperature or a fan, please attach tools\drivertest.txt as well

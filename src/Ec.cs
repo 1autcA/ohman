@@ -178,7 +178,11 @@ namespace Ohman {
         public bool WriteByte(byte reg, byte value) {
             if (!Map.MayWrite(reg)) { LastError = "0x" + reg.ToString("X2") + " is not a register this map allows writing"; Log.Write("EC: refused write to " + LastError); return false; }
             byte had; DateTime at;
-            if (lastWritten.TryGetValue(reg, out had) && had == value && lastWrittenAt.TryGetValue(reg, out at) && (DateTime.Now - at).TotalSeconds < 5) return true;
+            // Never for a register the controller changes by itself. The countdown is decremented in hardware, so
+            // "we already wrote 255 to it" is no reason to believe it still says 255 - and with the fan tick at
+            // five seconds and this window at five seconds, whether the refresh was sent came down to jitter.
+            if (reg != Map.Countdown
+                && lastWritten.TryGetValue(reg, out had) && had == value && lastWrittenAt.TryGetValue(reg, out at) && (DateTime.Now - at).TotalSeconds < 5) return true;
             bool ok = Locked(delegate { return WriteRaw(reg, value); }, "write 0x" + reg.ToString("X2"));
             if (ok) { lastWritten[reg] = value; lastWrittenAt[reg] = DateTime.Now; }
             return ok;
@@ -221,11 +225,46 @@ namespace Ohman {
         /// it resumes its curve on the next tick of its clock. omen-fan's restore sequence.</summary>
         public bool ReleaseFans() {
             lastWritten.Clear();                        // the point is to write these whatever we wrote last
-            bool ok = WriteByte(Map.FanSet1, 0);
-            ok &= WriteByte(Map.FanSet2, 0);
-            ok &= WriteByte(Map.Manual, Map.ManualOff);
+            // Control first, levels second. The other way round - which is how this was written - leaves the
+            // controller in manual mode holding zero if the write that hands control back is the one that fails,
+            // and both fans stop on a machine Ohman is in the middle of quitting. Any write here can fail: the
+            // shared lock can be held by another tool for longer than we wait for it, and the EC can time out.
+            // This order means a failure part way through leaves stale levels nothing is reading any more.
+            bool ok = WriteByte(Map.Manual, Map.ManualOff);
             ok &= WriteByte(Map.Countdown, Map.CountdownDefault);
+            ok &= WriteByte(Map.FanSet1, 0);
+            ok &= WriteByte(Map.FanSet2, 0);
             return ok;
+        }
+
+        /// <summary>Does this controller actually follow the map? Asked once, on the machine, before anything is
+        /// written - which is worth more than any list of board ids, because it is evidence rather than a guess
+        /// about what a number near another number means.
+        ///
+        /// Four questions, cheapest first. The control register is a two-valued thing: if it holds anything but
+        /// the two fan-control states then this address is not that register here, and that is the one that takes
+        /// the fans away from the firmware. The temperature register has to read like a temperature, and has to
+        /// agree with the CPU's own sensor when the driver can supply one. The tachometers have to read like fan
+        /// speeds, and have to agree with the firmware's own answer when it will give one.</summary>
+        public bool Verify(int[] mailboxRpm, double dieTemp, out string why) {
+            EcReading r = Read();
+            if (!r.Any) { why = LastError.Length > 0 ? LastError : "the EC did not answer"; return false; }
+            if (r.Manual != Map.ManualOff && r.Manual != Map.ManualOn) {
+                why = "0x" + Map.Manual.ToString("X2") + " reads 0x" + (r.Manual < 0 ? "??" : r.Manual.ToString("X2")) + ", which is not a fan-control state";
+                return false;
+            }
+            if (r.Cpu < 20 || r.Cpu > 110) { why = "0x" + Map.CpuTemp.ToString("X2") + " reads " + r.Cpu + ", which is not a temperature"; return false; }
+            if (!double.IsNaN(dieTemp) && Math.Abs(r.Cpu - dieTemp) > 25) {
+                why = "it reads " + r.Cpu + " where the CPU itself reads " + dieTemp.ToString("0");
+                return false;
+            }
+            if (r.Rpm1 < 0 || r.Rpm1 > 9000 || r.Rpm2 < 0 || r.Rpm2 > 9000) { why = "fan speeds of " + r.Rpm1 + " and " + r.Rpm2 + " are not rpm"; return false; }
+            if (mailboxRpm != null && mailboxRpm.Length > 1 && mailboxRpm[0] > 0) {
+                int want = mailboxRpm[0] * 100, slack = Math.Max(500, want / 4);
+                if (Math.Abs(r.Rpm1 - want) > slack) { why = "it reads " + r.Rpm1 + " rpm where the firmware reads " + want; return false; }
+            }
+            why = "CPU " + r.Cpu + " C, fans " + r.Rpm1 + "/" + r.Rpm2 + " rpm, control 0x" + r.Manual.ToString("X2");
+            return true;
         }
 
         public void Dispose() {

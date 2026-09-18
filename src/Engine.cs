@@ -113,6 +113,7 @@ namespace Ohman {
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
         public string KeyCommand = "";              // KeyAction.Run: command line the OMEN key starts
         public bool DriverUse = true;               // use the PawnIO driver when it is installed
+        public int FanCeilingSeen;                  // top fan level measured on this machine, 0 = not learned yet
         public bool DriverInstalledByOhman = false; // we put it there, so Uninstall may offer to take it away
         public bool DriverRestartPending = false;   // the installer asked for a restart and has not had one
         public string DriverNudgeDismissed = "";    // the Ohman version whose Home-page nudge was closed
@@ -435,6 +436,14 @@ namespace Ohman {
                     if (g != null) {
                         try { Hw.GetGpuPower(); g.HasGpuPower = true; } catch (Exception ex) { Log.Write("generic: no GPU power control (" + ex.Message + ")"); }
                         try { int top = Hw.GetFanTableMax(); if (top > g.Curve.Ceiling) g.Curve.Rescale(top); } catch { }
+                        // What this machine was measured doing beats what its firmware claims, and on the boards
+                        // where this matters the firmware claims nothing usable, so the table cannot lower a
+                        // ceiling that started too high. NoteFanLevels only writes this after watching the fans
+                        // refuse to go any faster while Ohman was asking for the top.
+                        if (S.FanCeilingSeen > g.Curve.Floor + 5 && S.FanCeilingSeen < g.Curve.Ceiling) {
+                            Log.Write("fan ceiling " + g.Curve.Ceiling + " -> " + S.FanCeilingSeen + ", measured on this machine");
+                            g.Curve.Rescale(S.FanCeilingSeen);
+                        }
                         P = g;
                         Supported = true;
                         Generic = true;
@@ -702,6 +711,37 @@ namespace Ohman {
         //  * Therefore every mode drives the fans explicitly and never below the curve floor. Auto = the vendor app's own
         //    curve (P.Curve) stepped every 5 s; Manual = the slider levels; Max = the max-fan flag. All with the trigger.
         int curLevel1 = -1, curLevel2 = -1;                // last levels written (what the firmware currently holds)
+
+        // The documented place to find a board's top fan level is its own fan table on 0x2F, and on some boards
+        // that table is not populated: 8A26 answers with one fan and one row out of twelve. Ohman then keeps the
+        // Transcend 14's 57, the curve asks for a speed these fans cannot reach, and the readout divides a real
+        // 4300 rpm by an imaginary 5700 and shows 75% at full tilt, with Max looking dead because the curve was
+        // already pinned at the cap. So measure it instead. 0x2D reports the speed the fans are turning, not the
+        // level asked for, which is why it has to settle: a fan still spooling up reads low and means nothing.
+        int ceilingTicks, ceilingHighWater;
+        const int CeilingSettleTicks = 8;          // readings spent asking for the top before the answer is believed
+        const int CeilingMargin = 10;              // and how far short it must fall, so noise never moves it
+        /// <summary>One fan reading, from wherever Ohman happened to take it. Applied at the next start rather
+        /// than now: the sliders take their range once, before anything is wired to them, because changing a
+        /// Maximum coerces the Value under it and that would read as the owner moving the slider.</summary>
+        public void NoteFanLevels(int[] f) {
+            if (f == null || f.Length < 2 || P == null || P.Curve == null || !Generic) return;
+            int seen = Math.Max(f[0], f[1]);
+            if (seen <= 0 || seen > 255) return;
+            // Only while asking for everything. Any lower and a low reading says nothing about the limit.
+            if (!(GuardActive || S.Fan == FanMode.Max || Math.Max(curLevel1, curLevel2) >= P.Curve.Ceiling)) {
+                ceilingTicks = 0; ceilingHighWater = 0; return;
+            }
+            if (seen > ceilingHighWater) ceilingHighWater = seen;
+            if (++ceilingTicks < CeilingSettleTicks) return;
+            ceilingTicks = 0;
+            int real = ceilingHighWater;
+            if (real >= P.Curve.Ceiling - CeilingMargin || real <= P.Curve.Floor + 5 || real == S.FanCeilingSeen) return;
+            S.FanCeilingSeen = real;
+            S.Save();
+            Log.Write("fan ceiling learned: asked for " + P.Curve.Ceiling + " and these fans never went past " + real
+                + "; using " + real + " from the next start");
+        }
         public int AutoLevel1 { get { return curLevel1; } }
         public int AutoLevel2 { get { return curLevel2; } }
         public double GpuTemp = double.NaN, IrTemp = double.NaN;   // GpuTemp fed by the UI sensor loop; IrTemp read here
@@ -1178,6 +1218,7 @@ namespace Ohman {
                 int[] f;
                 int c;
                 lock (applySync) { f = Hw.GetFanLevels(); c = Hw.GetTemperature(); }
+                NoteFanLevels(f);
                 GuardChassis = c;
                 double t = CpuTemp;
                 bool cpuKnown = !double.IsNaN(t);

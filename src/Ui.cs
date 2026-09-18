@@ -1962,6 +1962,7 @@ namespace Ohman {
                 int[] f = null;
                 int t = -1;
                 try { f = E.Hw.GetFanLevels(); } catch (Exception ex) { Log.Write("read fans: " + ex.Message); }
+                try { if (f != null) E.NoteFanLevels(f); } catch { }
                 try { t = E.Hw.GetTemperature(); } catch { }
                 Dispatcher.BeginInvoke((Action)delegate {
                     if (f != null) {

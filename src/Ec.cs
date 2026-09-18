@@ -57,7 +57,10 @@ namespace Ohman {
         /// laptops of the same year using each. Only ProbeFanWrite can answer it, so only it sets this.</summary>
         public bool UsePercent;
         public byte Manual = 0x62, ManualOn = 0x06, ManualOff = 0x00;   // OMCC
-        public byte Countdown = 0x63, CountdownDefault = 0x78, CountdownHold = 0xFF;   // XFCD, seconds
+        // XFCD counts down and hands the fans back when it reaches zero, so zero itself is "no timeout" and is
+        // what omen-fan writes to take control. Ohman refreshes every tick instead and uses the timeout as the
+        // backstop: if Ohman dies, the fans are the controller's again within CountdownHold seconds.
+        public byte Countdown = 0x63, CountdownRelease = 0x01, CountdownHold = 0xFF;
         public byte Mode = 0x95, Charge = 0x96;                     // HPCM, XBCH: read for the report only
         byte[] writable;
         /// <summary>Every register a write may touch. Anything else is refused in code, whatever the caller.</summary>
@@ -226,6 +229,7 @@ namespace Ohman {
         /// map fits, and the caller must stop using it. The countdown is set to its maximum so the hold outlives
         /// the caller's own 5 s tick many times over; the caller still calls every tick, and a repeat is free.</summary>
         public bool HoldFans(int level1, int level2, int ceiling) {
+            Claim();
             byte l1 = Map.Encode(level1, ceiling), l2 = Map.Encode(level2, ceiling);
             byte r1 = Map.UsePercent ? Map.FanSetPct1 : Map.FanSet1, r2 = Map.UsePercent ? Map.FanSetPct2 : Map.FanSet2;
             if (!WriteByte(Map.Manual, Map.ManualOn)) return false;
@@ -237,28 +241,66 @@ namespace Ohman {
             return true;
         }
 
-        /// <summary>Hand the fans back: levels cleared, manual off, countdown at the firmware's own default so
-        /// it resumes its curve on the next tick of its clock. omen-fan's restore sequence.</summary>
+        /// <summary>What the controller looked like before Ohman touched it, taken once on the way in.
+        ///
+        /// 0x62 is not Ohman's register. The firmware's own mailbox relay reads it to decide whether a fan level
+        /// arriving on 0x2E gets passed to the fans, so whatever is in it belongs to the firmware and handing the
+        /// fans back means putting that value back, not writing the zero that looks like "off" from this side.</summary>
+        int entryManual = -1, entryCountdown = -1;
+        void Claim() {
+            if (entryManual >= 0) return;
+            byte v;
+            if (ReadByte(Map.Manual, out v)) entryManual = v;
+            if (ReadByte(Map.Countdown, out v)) entryCountdown = v;
+        }
+
+        /// <summary>Hand the fans back: the control registers restored to the values they held before Ohman
+        /// wrote them, and nothing set to zero.
+        ///
+        /// 1.1 did the opposite of both and shipped a laptop with two stopped fans and no way back. It wrote
+        /// 0x62 = 0x00 because that is "BIOS control" in omen-fan, where it is the right answer because omen-fan
+        /// is the only writer. Here it is not: the firmware relay behind the WMI mailbox reads the same byte, and
+        /// with it clear the relay silently dropped every level Ohman sent afterwards. The log shows it exactly,
+        /// with 0x2E given 49/49 and 0x2D reading back 0/0 ten seconds later on the same machine. Max fan went
+        /// the same way, which is why the thermal guard could do nothing at 98 C. Clearing the level registers on
+        /// top of that is what made the state stopped rather than merely stale.
+        ///
+        /// So: put back what was found, and leave the last level alone. It is a speed the machine was happy to
+        /// run at, and whoever takes over replaces it on their next write. A stale high level is survivable and a
+        /// stale zero is not.</summary>
         public bool ReleaseFans() {
             Forget();
-            // Control first, levels second. Any write here can fail, and the other way round a failure on the
-            // one that hands control back leaves the controller in manual mode holding zero, which is both fans
-            // stopped on a machine Ohman is quitting. This order leaves stale levels nothing is reading.
-            bool ok = WriteByte(Map.Manual, Map.ManualOff);
-            ok &= WriteByte(Map.Countdown, Map.CountdownDefault);
-            ok &= WriteByte(Map.FanSet1, 0);
-            ok &= WriteByte(Map.FanSet2, 0);
-            ok &= WriteByte(Map.FanSetPct1, 0);
-            ok &= WriteByte(Map.FanSetPct2, 0);
+            // Restore only what was actually taken. When the snapshot failed there is nothing to give back, and
+            // writing a guessed 0x00 here is precisely the bug: it is the value that tells the firmware relay to
+            // stop passing fan levels on, and picking it as a fallback would reintroduce it on the one path where
+            // the EC is least well understood.
+            bool ok = true;
+            if (entryManual >= 0) ok &= WriteByte(Map.Manual, (byte)entryManual);
+            if (entryCountdown >= 0) ok &= WriteByte(Map.Countdown, (byte)entryCountdown);
+            entryManual = entryCountdown = -1;
             return ok;
+        }
+
+        /// <summary>Did the fans actually come back? Called after a release on the way out of manual control,
+        /// because a release that silently did not take is the one failure here that can hurt somebody. Writes a
+        /// survivable level through the controller if they are still stopped.</summary>
+        public bool ConfirmFansRunning(int safeLevel, int ceiling) {
+            Thread.Sleep(3000);
+            EcReading r = Read();
+            if (r.Rpm1 < 0 || r.Rpm1 > 300 || r.Rpm2 > 300) return true;       // reading them at all, and moving
+            Log.Write("EC: fans still read " + r.Rpm1 + "/" + r.Rpm2 + " rpm after handing control back; forcing " + safeLevel);
+            Forget();
+            HoldFans(safeLevel, safeLevel, ceiling);
+            return false;
         }
 
         /// <summary>Which register pair drives the fans here, found by driving them. Everything else about this
         /// controller can be checked by reading it; this cannot, because both pairs accept a write and only one
         /// is connected. Only ever asks for more air than is already moving, and hands the fans back in a
         /// finally whatever happens. Fifteen seconds.</summary>
-        public string ProbeFanWrite() {
+        public string ProbeFanWrite(int safeLevel, int ceiling) {
             var sb = new StringBuilder();
+            Claim();
             int rest = AverageRpm();
             if (rest < 0) return "  the tachometers did not answer, so there is nothing to measure a change against\n";
             sb.AppendLine("  fans at rest:    " + rest + " rpm");
@@ -270,6 +312,10 @@ namespace Ohman {
                     byte v = pct ? (byte)80 : (byte)50;
                     string what = "0x" + r1.ToString("X2") + "/0x" + r2.ToString("X2") + " = " + v + (pct ? "%" : " (rpm/100)");
                     Forget();
+                    // Per pass, because the release at the end of the previous one gave the snapshot back and
+                    // cleared it. Without this the second pass takes control without recording what it took, and
+                    // the release in the finally has nothing to restore and leaves the machine in manual.
+                    Claim();
                     if (!(WriteByte(Map.Manual, Map.ManualOn) && WriteByte(Map.Countdown, Map.CountdownHold)
                         && WriteByte(r1, v) && WriteByte(r2, v))) {
                         sb.AppendLine("  " + what.PadRight(27) + "the write was refused (" + LastError + ")");
@@ -284,8 +330,14 @@ namespace Ohman {
                     Thread.Sleep(2500);
                 }
             } finally {
-                if (ReleaseFans()) sb.AppendLine("  fans handed back to the controller.");
-                else sb.AppendLine("  COULD NOT hand the fans back: " + LastError + ". Restart the machine if they sound wrong.");
+                bool released = ReleaseFans();
+                // Not "we wrote the register", but "the fans are turning". This test is the one thing in Ohman
+                // that deliberately stops somebody's fans for a few seconds, so it does not get to walk away on
+                // the strength of a write that returned true.
+                bool spinning = ConfirmFansRunning(safeLevel, ceiling);
+                if (released && spinning) sb.AppendLine("  fans handed back to the controller and turning again.");
+                else if (spinning) sb.AppendLine("  handover reported an error (" + LastError + ") but the fans are turning.");
+                else sb.AppendLine("  fans did not restart on their own, so they are being held at " + safeLevel + " instead. Please say so in the issue.");
             }
             return sb.ToString();
         }

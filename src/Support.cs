@@ -263,10 +263,17 @@ namespace Ohman {
                 }
                 // The one thing about this controller that reading it cannot answer. Only when asked for, because
                 // everything else in this report is read-only and that is what it is advertised as.
-                if (Program.FanProbe && e.EcVerified) {
+                if (Program.FanProbe && e.EcVerified && !e.EcFanRouteWanted) {
+                    sb.AppendLine();
+                    sb.AppendLine("Which register drives the fans: not run.");
+                    sb.AppendLine("  The firmware's own fan channel works on this board, so Ohman never writes these registers");
+                    sb.AppendLine("  here and the answer would not be used anywhere. Writing them regardless is what stopped both");
+                    sb.AppendLine("  fans on an 8C58 in 1.1: the firmware reads the same control byte, and a tool that changes it");
+                    sb.AppendLine("  behind the firmware's back leaves it refusing every level afterwards.");
+                } else if (Program.FanProbe && e.EcVerified) {
                     sb.AppendLine();
                     sb.AppendLine("Which register drives the fans (writes, briefly; only ever asks for more air than is already moving)");
-                    sb.Append(e.Ec.ProbeFanWrite());
+                    sb.Append(e.Ec.ProbeFanWrite(e.P.Curve.Fallback, e.P.Curve.Ceiling));
                 } else if (e.EcVerified) {
                     sb.AppendLine("  Run tools\\drivertest.cmd and answer yes to the fan test to find which register actually drives them.");
                 }

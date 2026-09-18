@@ -77,7 +77,14 @@ namespace Ohman {
             } catch { }
             return "";
         }
-        public static bool IsIntel { get { return Vendor().IndexOf("Intel", StringComparison.OrdinalIgnoreCase) >= 0; } }
+        /// <summary>Cached: the settings row asks on every refresh and a CPU does not change under us.</summary>
+        static int isIntel;
+        public static bool IsIntel {
+            get {
+                if (isIntel == 0) isIntel = Vendor().IndexOf("Intel", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : -1;
+                return isIntel == 1;
+            }
+        }
 
         /// <summary>The register set for this machine's CPU, or null with the reason.</summary>
         public static CpuRegisters Open(out string why) {

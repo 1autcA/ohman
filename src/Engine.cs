@@ -836,8 +836,13 @@ namespace Ohman {
         /// <summary>Where fan levels should go: the EC only when this board's mailbox cannot take them, whether
         /// the profile said so or the firmware has just shown it, and only once the EC has proved it is the one
         /// the map describes.</summary>
+        /// <summary>Would a fan level ever go through the EC on this board? False wherever the firmware's own
+        /// channel works, and there nothing may write the EC's fan registers: the firmware reads them too, and
+        /// two writers with no arbitration between them is the whole of the 1.1 stopped-fans bug.</summary>
+        public bool EcFanRouteWanted { get { return (P.DriverFor & DriverFor.FanLevels) != 0 || fanLevelsRefused; } }
+
         FanRoute ChooseRoute() {
-            bool need = (P.DriverFor & DriverFor.FanLevels) != 0 || fanLevelsRefused;
+            bool need = EcFanRouteWanted;
             FanRoute was = Route;
             Route = (Ec != null && ecVerified && need && !Ec.Resting) ? FanRoute.Ec : FanRoute.Mailbox;
             // A route taking over starts clean: fanWriteFailures counts mailbox refusals, and three of them back
@@ -1151,6 +1156,8 @@ namespace Ohman {
         public int GuardChassis = -1;
         DateTime guardSafeSince = DateTime.MinValue;
         int guardHotTicks;                 // consecutive ten-second ticks that have judged the machine hot
+        int guardWarmTicks;
+        int guardIgnoredTicks;             // and, once engaged, consecutive ticks where max fan plainly did not arrive                // and, once engaged, consecutive ticks that are not yet cool
         bool chassisScaleKnown;            // the 0x23 sensor has read below the release threshold at least once, so it is on the scale the profile assumes
         System.Threading.Timer guard;
 
@@ -1188,16 +1195,34 @@ namespace Ohman {
                 if ((hot || stalled) && !GuardActive && guardHotTicks >= 2) {
                     GuardActive = true;
                     guardSafeSince = DateTime.MinValue;
-                    Log.Write("THERMAL GUARD engaged: cpu=" + (cpuKnown ? t.ToString("0") : "?") + " chassis=" + c + " fans=" + f[0] + "/" + f[1] + (stalled ? " (stalled)" : ""));
-                    Fire(Toast, "Thermal guard: fans to max (CPU " + (cpuKnown ? t.ToString("0") + "°" : "?") + ", chassis " + c + "°)", true);
+                    Log.Write("THERMAL GUARD engaged: cpu=" + (cpuKnown ? t.ToString("0") : "?") + " ambient=" + c + " fans=" + f[0] + "/" + f[1] + (stalled ? " (stalled)" : ""));
+                    // "ambient", matching the Home page. Same 0x23 index 1 either way; HP's own device library calls it
+                    // Ambient and Ohman called it chassis for a year, so the two lines disagreed on screen.
+                    Fire(Toast, "Thermal guard: fans to max (CPU " + (cpuKnown ? t.ToString("0") + "°" : "?") + ", ambient " + c + "°)", true);
                     lock (applySync) MaxFan(true, "Guard max fan");
                     Changed();
                 } else if (GuardActive) {
+                    // Max fan has been commanded on every tick since this engaged, so the firmware's own level
+                    // readback should be nowhere near zero. When it is, the command is not arriving, and a guard
+                    // that keeps reporting "fans to max" while the machine sits at 98 C is worse than no guard.
+                    // 1.1 did exactly that for minutes. It cannot fix this from here, but it must not be quiet.
+                    if (f[0] >= 0 && f[1] >= 0 && (f[0] + f[1]) < P.Guard.StallLevelSum) guardIgnoredTicks++; else guardIgnoredTicks = 0;
+                    if (guardIgnoredTicks == 3) {
+                        Log.Write("THERMAL GUARD is being ignored: max fan commanded every tick and the firmware still reports "
+                            + f[0] + "/" + f[1] + ". Fan commands are not reaching the fans.");
+                        Fire(Toast, "The fans are not answering the thermal guard. Save your work and restart the machine.", true);
+                    }
                     bool safe = (!cpuKnown || t < P.Guard.CpuSafe) && (!chassisUsable || c < P.Guard.ChassisSafe);
-                    if (!safe) { guardSafeSince = DateTime.MinValue; lock (applySync) MaxFan(true, "Guard max fan"); }
+                    // One warm sample no longer restarts the minute. A sensor sitting a degree under its own
+                    // threshold crosses it now and then, and requiring sixty unbroken seconds meant the guard
+                    // could hold maximum fan on a machine that had already cooled, indefinitely.
+                    if (safe) guardWarmTicks = 0; else guardWarmTicks++;
+                    if (guardWarmTicks >= 2) { guardSafeSince = DateTime.MinValue; lock (applySync) MaxFan(true, "Guard max fan"); }
+                    else if (!safe) { lock (applySync) MaxFan(true, "Guard max fan"); }
                     else if (guardSafeSince == DateTime.MinValue) guardSafeSince = DateTime.Now;
                     else if ((DateTime.Now - guardSafeSince).TotalSeconds >= P.Guard.SafeSeconds) {
                         GuardActive = false;
+                        guardIgnoredTicks = 0;
                         Log.Write("thermal guard released; fan mode back to " + S.Fan);
                         Fire(Toast, "Thermal guard released", false);
                         curLevel1 = curLevel2 = -1;         // unknown after max fan; the curve starts again from its floor

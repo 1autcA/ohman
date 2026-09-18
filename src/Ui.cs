@@ -110,6 +110,8 @@ namespace Ohman {
         ToggleButton tgDriver;
         FrameworkElement driverBanner, driverClose, driverRow;
         Run runCpuHead, runCpuWatts, runCpuTail;    // the CPU caption in three pieces, so the limits can hang off the wattage alone
+        string cpuLimitsTip = "?";
+        bool cpuTipFromDriver;
         enum DriverState { Busy, NotInstalled, RestartPending, Off, Outdated, Ready, Broken }
         DriverState driverState = DriverState.NotInstalled;   // what the row is showing, so the click knows what it means
         Brush subCpuBrush;
@@ -1024,7 +1026,9 @@ namespace Ohman {
             double was = ActualWidth * ActualHeight;
             Morph(animate);
             if (live) CrossFade(old, page, (RailW + pageHost.Width) * Math.Ceiling(NaturalHeight()) > was);
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate { PlaceRailPill(animate); });
+            // Render, not Loaded: Loaded sits below Render and Input, so every sensor tick, toast and Refresh that
+            // lands first pushes the pill back another pass. Render is still after layout, which is all it needs.
+            Dispatcher.BeginInvoke(DispatcherPriority.Render, (Action)delegate { PlaceRailPill(animate); });
             Log.Write("page " + p);
         }
 
@@ -1169,7 +1173,7 @@ namespace Ohman {
                 Height = mt[3] - mt[1];
                 E.S.WinX = (int)mt[0];
                 E.S.WinY = (int)mt[1];
-                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate { PlaceRailPill(true); });   // residual is sub-pixel; Glide snaps it
+                Dispatcher.BeginInvoke(DispatcherPriority.Render, (Action)delegate { PlaceRailPill(true); });   // residual is sub-pixel; Glide snaps it
             }
         }
         void ApplyBounds(double l, double t, double r, double b) {
@@ -1667,7 +1671,7 @@ namespace Ohman {
                     // rail pill is placed from the selected button's position and is only replaced on navigation
                     // or a rail resize, neither of which happens here, so it would sit detached until the owner
                     // clicked something else.
-                    Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)delegate { PlaceRailPill(true); });
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, (Action)delegate { PlaceRailPill(true); });
                 }
             }
         }
@@ -1926,12 +1930,18 @@ namespace Ohman {
             bigGpu.Foreground = TempBrush(s.GpuTemp);
             runCpuHead.Text = "CPU" + (double.IsNaN(s.CpuLoad) ? "" : " · " + s.CpuLoad.ToString("0") + "%") + (double.IsNaN(s.CpuMhz) || s.CpuMhz <= 0 ? "" : " · " + (s.CpuMhz / 1000).ToString("0.0") + " GHz");
             runCpuWatts.Text = double.IsNaN(s.CpuWatts) ? "" : " · " + s.CpuWatts.ToString("0") + " W";
-            runCpuWatts.ToolTip = PowerLimits(s);
+            // Only when it changes. Assigning a tooltip invalidates the inline it hangs off, and these two move
+            // twice in a session while this runs every couple of seconds.
+            string limits = PowerLimits(s);
+            if (limits != cpuLimitsTip) { cpuLimitsTip = limits; runCpuWatts.ToolTip = limits; }
             runCpuTail.Text = s.Throttle.Length > 0 ? " · " + s.Throttle : "";
             // Amber while the CPU says it is being held back, and the caption says why: that is the one word
             // the ACPI zone could never supply, and the reason the driver exists on boards with working fans.
             subCpu.Foreground = s.Throttle.Length > 0 ? Ui.Brush(Ui.Warn) : subCpuBrush;
-            bigCpu.ToolTip = s.CpuFromDriver ? "Die temperature, read from the CPU itself" : null;
+            if (s.CpuFromDriver != cpuTipFromDriver) {
+                cpuTipFromDriver = s.CpuFromDriver;
+                bigCpu.ToolTip = s.CpuFromDriver ? "Die temperature, read from the CPU itself" : null;
+            }
             subGpu.Text = "GPU" + (double.IsNaN(s.GpuLoad) ? "" : " · " + s.GpuLoad.ToString("0") + "%") + (double.IsNaN(s.GpuWatts) ? "" : " · " + s.GpuWatts.ToString("0") + " W");
             txtFootRight.Text = s.BatteryPercent >= 0 && s.BatteryPercent <= 100 ? (s.OnBattery ? "Battery " : "AC · ") + s.BatteryPercent + "%" : "";
         }

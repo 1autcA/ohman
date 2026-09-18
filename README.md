@@ -30,6 +30,7 @@ firmware interface, without any ads, services, drivers, or accounts.
 | **OMEN key** | Opens the panel, cycles modes, toggles max fan, or runs a command of your choice. OGH's key handler is stopped, reversibly. Shift+F11 cycles modes; Ctrl+Alt+E/B/P/M/O for the rest. |
 | **Safety** | A thermal guard forces max fan on a hot CPU, a hot chassis or stalled fans. It can be switched off, with a warning. Levels between 1 and 1800 rpm are refused, because no fan holds them; 0 is allowed, and stops them. |
 | **Updates** | A newer build is fetched in the background and waits. Restart into it when it suits you, from Settings or the rail. Nothing is installed behind your back. |
+| **Driver** | Optional. One click in Settings installs [PawnIO](https://pawnio.eu), the signed driver FanControl and LibreHardwareMonitor use. With it Ohman reads the CPU's own die temperature, power limits and throttle reasons, and on boards whose firmware refuses fan levels it sets them through the embedded controller instead. Without it, Ohman is exactly what it was. |
 | **Extras** | Starts with Windows without a UAC prompt, Eco on battery, Windows power-mode sync, and an on-screen flash when a key changes something. |
 
 Settings live in `ohman.state`, everything the app does goes to `ohman.log`. Both sit beside the executable.
@@ -86,6 +87,9 @@ mode (`0x52`), keyboard lighting (`0x20009`), plus read-only queries. The OMEN k
   why it has to stay running to hold a curve. It never writes a level between 1 and 1800 rpm, because no fan
   holds one; 0 it will write, because that is off and HP's own tables ask for it.
 - The thermal guard runs on its own ten-second timer and forces maximum fan whatever mode you picked.
+- With the optional driver, the EC's own registers are reachable: the same map OmenMon and omen-fan use, written
+  only on boards whose generation that map is known for, and never on the 2025 OMEN MAX whose layout differs.
+  [docs/research.md](docs/research.md) §12 has the registers and the reasons.
 
 ## Adding a laptop in code
 
@@ -110,6 +114,7 @@ request; see [CONTRIBUTING.md](CONTRIBUTING.md).
 | `tools\support-info.cmd` | data for a support request |
 | `tools\verify.cmd` | read-only check of every query the app uses, plus a key-event capture |
 | `tools\lighttest.cmd` | read-only: every lighting device on the machine and which ones are switched on |
+| `tools\drivertest.cmd` | read-only: why the driver is or is not working, and what it reads next to what Ohman had without it |
 | `tools\powertest.ps1` | A/B the power-gain slider on GPU watts and clocks |
 | `tools\fantest.cmd` | holds the fans at zero for 60 s, then aborts on its own. Run it on a cool, idle machine |
 | `tools\fanwatch.cmd` | writes a fan level every 5 s for 15 minutes and records what the firmware answered. For fans that stop responding during a game |
@@ -122,6 +127,9 @@ request; see [CONTRIBUTING.md](CONTRIBUTING.md).
 src\Platform.cs   platform profiles: the only model-specific file
 src\Hardware.cs   the WMI/BIOS mailbox + simulated hardware
 src\Lighting.cs   keyboard lighting (0x20009) + the Windows Dynamic Lighting hand-over
+src\Driver.cs     the PawnIO driver: find, install, open, load a signed module, call it
+src\Ec.cs         the embedded controller through it: handshake, per-generation register map, fan hold
+src\Cpu.cs        the CPU's registers through it: die temperature, power limits, throttle reasons
 src\Engine.cs     settings, apply logic, keep-alive, thermal guard, OMEN key, OGH takeover
 src\Sensors.cs    perf counters + nvidia-smi
 src\Curve.cs      the fan-curve graph
@@ -155,6 +163,7 @@ to Ohman. It also assisted in code-writing. The code has been independently veri
 
 ## Licence
 
-GPL-3.0-or-later for the code. OFL 1.1 for the Font.
+GPL-3.0-or-later for the code. OFL 1.1 for the Font. LGPL-2.1 for the PawnIO modules embedded in the exe
+(`third_party\PawnIO.Modules`, unmodified signed binaries from their author).
 
 OMEN is a trademark of HP Inc. This project is not affiliated with HP.

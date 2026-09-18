@@ -7,6 +7,7 @@
 //   Ohman.exe --demo --board 8A25   simulate another board id (shows the generic profile the engine would build)
 //   Ohman.exe --screenshot f.png [--settings]   render the window to a PNG and exit (UI preview)
 //   Ohman.exe --lamps        list the HID lighting devices this machine has and exit (read-only; support data)
+//   Ohman.exe --driver       what the PawnIO driver, the CPU registers and the EC say on this machine (read-only; tools\drivertest.cmd)
 //   Ohman.exe --updated      started by the build it replaced: waits for that one to let go, then cleans it up
 using System;
 using System.Security.Principal;
@@ -35,7 +36,7 @@ namespace Ohman {
         public static bool JustUpdated;                       // --updated: this build was started by the one it replaced
         public static bool FlashTest;                         // --flash: show the key OSD at start (preview/screenshot aid)
         public static bool KeyboardTest;                      // --keyboard: open the keyboard page at start (screenshot aid)
-        public static string StartPage = "";                  // --page home|fans|keyboard|settings|update
+        public static string StartPage = "";                  // --page home|fans|keyboard|settings|update|driver
 
         [STAThread]
         public static int Main(string[] args) {
@@ -58,6 +59,7 @@ namespace Ohman {
             // Before the single-instance guard, like --lamps: with Ohman already running, anything after it
             // just signals the live window and exits, which made this silently do nothing.
             foreach (string a0 in args) if (a0.ToLowerInvariant() == "--support") return WriteSupport(args);
+            foreach (string a0 in args) if (a0.ToLowerInvariant() == "--driver") return WriteDriverReport(args);
             for (int i = 0; i + 1 < args.Length; i++)
                 if (args[i].ToLowerInvariant() == "--make-ico") { MainWindow.WriteIco(args[i + 1], Ui.BalColor); return 0; }   // build aid: writes the app icon
             bool wantExit = false;
@@ -104,6 +106,7 @@ namespace Ohman {
             var engine = new Engine(hw, settingsObj);
             engine.Init();
             var sensors = new Sensors();
+            sensors.CpuSource = delegate { return engine.Cpu; };
             sensors.Start();
 
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -187,6 +190,33 @@ namespace Ohman {
             Console.WriteLine(rep);
             try {
                 string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "support-info.txt");
+                System.IO.File.WriteAllText(p, rep);
+                Console.WriteLine("saved to " + p);
+            } catch (Exception ex) { Console.WriteLine("could not save: " + ex.Message); }
+            try { eng.Dispose(); } catch { }
+            HoldConsole(ownConsole);
+            return 0;
+        }
+
+        /// <summary>--driver: the driver, the CPU registers and the EC, asked and printed. Read-only, and it runs
+        /// beside a live Ohman: the device takes any number of handles and the EC lock serialises the two.</summary>
+        static int WriteDriverReport(string[] args) {
+            bool ownConsole = OpenConsole();
+            bool elev = false;
+            try { elev = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } catch { }
+            bool wantDemo = false;
+            foreach (string a in args) if (a.ToLowerInvariant() == "--demo") wantDemo = true;
+            IHardware hw2 = (wantDemo || !elev) ? (IHardware)new DemoHardware() : new Bios();
+            if (!elev) Console.WriteLine("NOT ELEVATED - the driver and the firmware were not asked anything. Run this from an administrator prompt.\n");
+            var s2 = Settings.Load();
+            s2.NoPersist = true;
+            var eng = new Engine(hw2, s2);
+            try { eng.Init(false); } catch (Exception ex) { Console.WriteLine("engine init failed: " + ex.Message); }
+            string rep;
+            try { rep = Support.DriverReport(eng); } catch (Exception ex) { rep = "driver report failed: " + ex; }
+            Console.WriteLine(rep);
+            try {
+                string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "driver-check.txt");
                 System.IO.File.WriteAllText(p, rep);
                 Console.WriteLine("saved to " + p);
             } catch (Exception ex) { Console.WriteLine("could not save: " + ex.Message); }

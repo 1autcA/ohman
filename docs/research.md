@@ -253,3 +253,74 @@ straight into the curve, the target moved every 5 s tick and the fans hunted aud
 3500 rpm while the machine did nothing. `AutoTick` now follows a smoothed reading (rising temperatures are taken
 immediately; falling ones decay at 40 % per tick) and ignores a downward change smaller than two levels. Upward
 moves and the 30 s keep-alive are unaffected, so nothing about the safety behaviour changes.
+
+## 12. The driver: PawnIO, the EC and the CPU registers (2026-09-18)
+
+Everything above goes through the WMI mailbox, which is all the firmware offers from user mode. Two things
+live behind it that the mailbox does not reach: the embedded controller's own registers and the CPU's
+model-specific registers. Both need ring 0, and the only way there that Windows still allows is a signed
+driver. Ohman's is [PawnIO](https://pawnio.eu), installed on request from Settings and never otherwise.
+
+**Why PawnIO and not a driver of our own.** Windows blocklists WinRing0 and its relatives (FanControl below
+V238 shipped one and was flagged `Trojan:Win32/Vigorf.A` for it). PawnIO is signed, HVCI-compatible, and
+executes only modules its author has signed - small scripts with an allow-list each - so the surface a caller
+can reach is fixed by the module, not by the caller. LibreHardwareMonitor, FanControl, ZenTimings and OmenCore
+all moved to it. The installer is redistributable unmodified (its own text says so); Ohman downloads it from
+`namazso/PawnIO.Setup` releases, checks the Authenticode chain and that the signer is `namazso.eu`, and runs
+`-install -silent`. Exit 0 is installed, 3010 wants a restart, 183 was already there. The device is opened
+with `CreateFile(\?\GLOBALROOT\Device\PawnIO)` and driven with two `DeviceIoControl` codes, load and
+execute; no DLL. `third_party\PawnIO.Modules` holds the three signed modules Ohman embeds.
+
+**What the CPU registers give.** Intel: `IA32_TEMPERATURE_TARGET` (0x1A2) bits 23:16 are TjMax;
+`IA32_PACKAGE_THERM_STATUS` (0x1B1) bits 22:16 the distance below it, bit 31 says the reading is valid, and
+bits 0 / 2 / 10 say thermal, PROCHOT and power-limit throttling right now; `IA32_THERM_STATUS` (0x19C) bit 12
+is the current limit. `MSR_PKG_POWER_LIMIT` (0x610) carries PL1 in bits 14:0 (enable bit 15) and PL2 in bits
+46:32 (enable bit 47), in the unit `MSR_RAPL_POWER_UNIT` (0x606) bits 3:0 declare; bit 63 is the firmware
+lock. `MSR_PKG_ENERGY_STATUS` (0x611) is a 32-bit energy counter. AMD: the die temperature is not an MSR but
+SMN register `THM_TCON_CUR_TMP` (0x59800), bits 31:21 in eighths of a degree with bit 19 selecting the
+-49 range; energy is `MSR_PKG_ENERGY_STAT` (0xC001029B) in the unit of `MSR_PWR_UNIT` (0xC0010299). All
+reads. The `IntelMSR` module would allow writing PL1/PL2; that waits for a tester and a slider.
+
+**The EC map.** OmenMon's (`Hardware/EcData.cs`), which agrees with omen-fan's probes (`docs/probes.md`) and
+OmenCore's fan code:
+
+| Register | Name | Meaning |
+|---|---|---|
+| `0x34` / `0x35` | SRP1 / SRP2 | set fan 1 / fan 2, rpm/100 - the mailbox's own unit |
+| `0x2C` / `0x2D` | XSS1 / XSS2 | set fan 1 / 2 in percent (not used) |
+| `0xB0..0xB3` | RPM1..RPM4 | read rpm, 16-bit little-endian per fan |
+| `0x57` / `0xB7` | CPUT / GPTM | CPU and GPU temperature, degrees |
+| `0x62` | OMCC | `0x06` = the caller has the fans, `0x00` = the EC has them |
+| `0x63` | XFCD | seconds until the EC takes the fans back; the firmware sets `0x78` = 120 |
+| `0xEC` | FFFF | max fan (`0x0C` on); omen-fan marks it unreliable, not used yet |
+| `0x95` | HPCM | the performance-mode byte, the same value 0x1A writes |
+| `0x96` | XBCH | "battery charge level"; nobody has shown it is writable |
+
+`XFCD` is the 120 s expiry §4 describes from the outside: the countdown the 0x10 keep-alive refreshes.
+Through the EC Ohman sets it to 255 while it holds the fans and back to 120 when it lets go.
+
+**What the EC is used for, and where.** Reads for the report everywhere a map exists. Writes only on a board
+whose mailbox refuses fan levels: `878A` by profile (0x2E answers rc 46 forever), or any board that has just
+refused eight writes in a row and has a map. The hold is `OMCC=06`, `SRP1/2=level`, `XFCD=FF`, then `OMCC`
+read back - an EC that does not keep `06` there is not one this map fits, and the route goes back to the
+mailbox after three such failures. Release is omen-fan's sequence: levels 0, `OMCC=00`, `XFCD=78`. The
+mailbox's max-fan flag (0x27) is left in charge of max fan and of the thermal guard: it works on these boards.
+
+**Where the map is trusted.** Board ids are assigned in order, so the generation is in the id. Every published
+map was made on 84xx-8Bxx boards (OmenMon on 8A14, omen-fan on a 16-c0xxx, OmenCore's field report on 8574),
+so `Families.EcLegacy` says yes to those and no to everything later. The reason for the "no" is OmenCore
+issue #60: on the 2025 OMEN MAX (`8D41`, `8D42`, `8D87`) the EC is laid out differently and the classic
+addresses written there corrupt EC state until the Caps Lock LED blinks in panic. Reads there are not useful
+either, so those boards get no map at all. A later board earns a map by a read-only probe (`tools\
+drivertest.cmd`: EC rpm beside mailbox 0x2D, EC CPUT beside the die temperature) matching on a real machine.
+
+**Why the EC is treated gently.** It also answers the battery, the lid and the keyboard. OmenCore 2.8.6 traced
+a "Critical Battery Trigger Met" shutdown on plugged-in laptops to ACPI Event 13 - EC transactions timing out
+under a flood of fan writes and battery polls - after which Windows read 0 % and acted on it. So: every wait in
+`Ec.cs` is bounded, an identical write within five seconds is skipped, one burst per 5 s tick, five timeouts
+in a row and the EC is left alone for ten minutes with the fans back on the mailbox route. The `Global\
+Access_EC` mutex is held for every transaction; OmenMon, LibreHardwareMonitor, OmenCore and HWiNFO all take it.
+
+**Not done, on purpose.** Undervolting (the module allows `MSR_OC_MAILBOX`, HP's BIOS locks it on nearly
+every board). Keyboard lighting through the EC (`0xB2..0xBE`: OmenCore reports hard crashes on a 17-ck2xxx).
+Any EC write on a board without a map.

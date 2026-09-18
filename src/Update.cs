@@ -56,10 +56,14 @@ namespace Ohman {
 
         // ---------- asking ----------
         /// <summary>The newest release, or null when the check failed.</summary>
-        public static Release Latest() {
+        public static Release Latest() { return LatestOf(Repo, AssetName); }
+
+        /// <summary>The newest release of any GitHub repository, and where one named asset on it is. The driver
+        /// installer comes from its author's releases through exactly this path.</summary>
+        public static Release LatestOf(string repo, string assetName) {
             try {
                 ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;      // TLS 1.2: GitHub refuses anything older
-                var req = (HttpWebRequest)WebRequest.Create("https://api.github.com/repos/" + Repo + "/releases/latest");
+                var req = (HttpWebRequest)WebRequest.Create("https://api.github.com/repos/" + repo + "/releases/latest");
                 req.UserAgent = Program.AppName + "/" + Program.Version;                 // GitHub rejects requests without one
                 req.Accept = "application/vnd.github+json";
                 req.Timeout = req.ReadWriteTimeout = 8000;
@@ -72,16 +76,16 @@ namespace Ohman {
                 // The assets are a list of objects. Find ours by name and read the rest of that object forward:
                 // size and browser_download_url both follow name inside it, and nothing nested in between carries
                 // either key.
-                int at = body.IndexOf("\"name\":\"" + AssetName + "\"", StringComparison.OrdinalIgnoreCase);
+                int at = body.IndexOf("\"name\":\"" + assetName + "\"", StringComparison.OrdinalIgnoreCase);
                 if (at >= 0) {
                     r.AssetUrl = Field(body, "browser_download_url", at);
                     long n;
                     if (long.TryParse(Number(body, "size", at) ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) r.Size = n;
                 }
-                Log.Write("update check: latest release " + r.Tag + ", running " + Program.Version
-                    + (r.AssetUrl == null ? " (no " + AssetName + " asset on it)" : ""));
+                Log.Write(repo + ": latest release " + r.Tag + (repo == Repo ? ", running " + Program.Version : "")
+                    + (r.AssetUrl == null ? " (no " + assetName + " asset on it)" : ""));
                 return r;
-            } catch (Exception ex) { Log.Write("update check failed: " + ex.Message); return null; }
+            } catch (Exception ex) { Log.Write(repo + " release check failed: " + ex.Message); return null; }
         }
 
         /// <summary>The newest release tag ("1.0.6"), or null when the check failed.</summary>
@@ -121,8 +125,26 @@ namespace Ohman {
             if (!Newer(r.Tag, Program.Version)) return false;
             string part = StagePath + ".part";
             try {
+                Download(r.AssetUrl, part, r.Size);
+                if (!Verify(part, r)) throw new Exception("what arrived is not " + AssetName + " " + r.Tag);
+                try { if (File.Exists(StagePath)) File.Delete(StagePath); } catch { }
+                File.Move(part, StagePath);
+                Log.Write("update " + r.Tag + " staged");
+                return true;
+            } catch (Exception ex) {
+                Log.Write("update download failed: " + ex.Message);
+                try { if (File.Exists(part)) File.Delete(part); } catch { }
+                return false;
+            }
+        }
+
+        /// <summary>Fetch one GitHub release asset to a file. Only GitHub's own hosts may answer, the length must
+        /// be the one the release declared, and a failure leaves nothing behind. Used for our own builds and for
+        /// the driver installer alike.</summary>
+        public static void Download(string url, string dest, long expectedSize) {
+            try {
                 ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
-                var req = (HttpWebRequest)WebRequest.Create(r.AssetUrl);
+                var req = (HttpWebRequest)WebRequest.Create(url);
                 req.UserAgent = Program.AppName + "/" + Program.Version;
                 req.Timeout = 15000;
                 req.ReadWriteTimeout = 60000;
@@ -136,21 +158,17 @@ namespace Ohman {
                         || host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
                     if (!ok) throw new Exception("redirected to " + u.Scheme + "://" + host);
                     using (var src = resp.GetResponseStream())
-                    using (var dst = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None)) {
+                    using (var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None)) {
                         var buf = new byte[64 * 1024];
                         int n;
                         while ((n = src.Read(buf, 0, buf.Length)) > 0) dst.Write(buf, 0, n);
                     }
                 }
-                if (!Verify(part, r)) throw new Exception("what arrived is not " + AssetName + " " + r.Tag);
-                try { if (File.Exists(StagePath)) File.Delete(StagePath); } catch { }
-                File.Move(part, StagePath);
-                Log.Write("update " + r.Tag + " staged");
-                return true;
-            } catch (Exception ex) {
-                Log.Write("update download failed: " + ex.Message);
-                try { if (File.Exists(part)) File.Delete(part); } catch { }
-                return false;
+                long len = new FileInfo(dest).Length;
+                if (expectedSize > 0 && len != expectedSize) throw new Exception(len + " bytes arrived, the release says " + expectedSize);
+            } catch {
+                try { if (File.Exists(dest)) File.Delete(dest); } catch { }
+                throw;
             }
         }
 

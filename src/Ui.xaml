@@ -315,6 +315,21 @@
             </Border>
           </Grid>
         </Border>
+        <!-- The driver nudge. Only on boards whose mailbox refuses something the EC can do, only while the driver
+             is missing, and the link is the whole install: one click, nothing to find or read first. -->
+        <Border x:Name="DriverBanner" Visibility="Collapsed" Background="#1F3F8CFF" CornerRadius="8" Padding="10,8" Margin="0,20,0,0">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,10,0">
+              <TextBlock x:Name="TxtDriverNudge" Style="{StaticResource Cap}" Foreground="#B9CDF7"/>
+              <TextBlock x:Name="TxtDriverNudgeSub" Style="{StaticResource Cap}" Foreground="#7F9AC8" FontSize="11.5" Margin="0,2,0,0"/>
+            </StackPanel>
+            <TextBlock x:Name="BtnDriverNudge" Grid.Column="1" Style="{StaticResource Link}" Text="Install driver" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <Border x:Name="DriverClose" Grid.Column="2" Background="Transparent" Cursor="Hand" VerticalAlignment="Top" Padding="6,0,2,4" Margin="0,-3,-4,0" ToolTip="Not now">
+              <TextBlock Text="&#215;" FontFamily="{DynamicResource UiFont}" FontSize="15" Foreground="#7F9AC8"/>
+            </Border>
+          </Grid>
+        </Border>
 
         <Grid Margin="0,24,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -687,6 +702,17 @@
                 <ToggleButton x:Name="TgGuard" Grid.Column="1" Style="{StaticResource Switch}"/>
               </Grid>
             </Border>
+            <!-- Only with the driver: the limits the CPU is actually holding, read from its own registers. -->
+            <Border x:Name="PlRow" Visibility="Collapsed" BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+                  <TextBlock Text="CPU power limits" Style="{StaticResource Row}"/>
+                  <TextBlock Text="What the CPU is holding right now, from its own registers" Style="{StaticResource RowSub}"/>
+                </StackPanel>
+                <TextBlock x:Name="TxtPl" Grid.Column="1" Style="{StaticResource Mono}" FontSize="12" Foreground="{StaticResource Text}" Text="--"/>
+              </Grid>
+            </Border>
 
             <TextBlock x:Name="SecDisplay" Text="DISPLAY" Margin="0,26,0,6"/>
             <Border x:Name="GfxRow" Visibility="Collapsed" BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
@@ -717,6 +743,21 @@
                   <TextBlock Text="Back to your choice when plugged in" Style="{StaticResource RowSub}"/>
                 </StackPanel>
                 <ToggleButton x:Name="TgLowHzBattery" Grid.Column="1" Style="{StaticResource Switch}"/>
+              </Grid>
+            </Border>
+
+            <!-- The one optional piece of kernel-mode anything. The row says what state it is in and offers the one
+                 action that state allows; the switch only exists once there is a driver to switch. -->
+            <TextBlock x:Name="SecDriver" Text="DRIVER" Margin="0,26,0,6"/>
+            <Border x:Name="DriverRow" BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+                  <TextBlock x:Name="TxtDriverTitle" Text="Hardware driver" Style="{StaticResource Row}"/>
+                  <TextBlock x:Name="TxtDriverSub" Style="{StaticResource RowSub}"/>
+                </StackPanel>
+                <TextBlock x:Name="BtnDriver" Grid.Column="1" Style="{StaticResource Link}" Text="Install" Margin="0,0,18,0"/>
+                <ToggleButton x:Name="TgDriver" Grid.Column="2" Style="{StaticResource Switch}" ToolTip="Read the CPU's own temperature and power limits through the driver, and drive the fans through it where the firmware refuses"/>
               </Grid>
             </Border>
 

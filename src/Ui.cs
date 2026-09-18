@@ -105,6 +105,12 @@ namespace Ohman {
         // settings
         Seg keySeg, gfxSeg, hzSeg, gpuSeg, pollSeg;
         TextBlock txtMachine, txtKeyInfo, txtGfxSub, txtGpuSub, txtDiag, txtUpdate, txtUpdateTitle, btnLearn, btnUpdate, btnDiag, btnLog, btnExit;
+        // driver
+        TextBlock txtDriverTitle, txtDriverSub, btnDriver, txtPl, txtDriverNudge, txtDriverNudgeSub, btnDriverNudge;
+        ToggleButton tgDriver;
+        FrameworkElement plRow, driverBanner, driverClose, driverRow;
+        Brush subCpuBrush;
+        string driverRowFor = "?";          // the state the row was last built for, so Refresh does not rebuild it every tick
         Border updateRow;
         string updateTitleFor = "?";        // staged version the title was last built for ("" = none); "?" = not built yet
         StackPanel updateText;
@@ -374,6 +380,19 @@ namespace Ohman {
             btnLog = F<TextBlock>("BtnLog");
             btnExit = F<TextBlock>("BtnExit");
             txtDiag = F<TextBlock>("TxtDiag");
+            txtDriverTitle = F<TextBlock>("TxtDriverTitle");
+            txtDriverSub = F<TextBlock>("TxtDriverSub");
+            btnDriver = F<TextBlock>("BtnDriver");
+            tgDriver = F<ToggleButton>("TgDriver");
+            plRow = F<FrameworkElement>("PlRow");
+            txtPl = F<TextBlock>("TxtPl");
+            driverBanner = F<FrameworkElement>("DriverBanner");
+            txtDriverNudge = F<TextBlock>("TxtDriverNudge");
+            txtDriverNudgeSub = F<TextBlock>("TxtDriverNudgeSub");
+            btnDriverNudge = F<TextBlock>("BtnDriverNudge");
+            driverClose = F<FrameworkElement>("DriverClose");
+            driverRow = F<FrameworkElement>("DriverRow");
+            subCpuBrush = subCpu.Foreground;
             btnClose = F<Button>("BtnClose");
             toast = F<Border>("Toast");
             txtToast = F<TextBlock>("TxtToast");
@@ -605,6 +624,11 @@ namespace Ohman {
                 Bg(delegate { E.SetGuard(on); });
             });
             OnSwitch(tgUpdateAuto, delegate(bool on) { Bg(delegate { E.SetUpdateOnLaunch(on); }); });
+            OnSwitch(tgDriver, delegate(bool on) { Bg(delegate { E.SetDriverUse(on); }); });
+            // One link, whose meaning is the row's state: install, update, restart, troubleshoot, remove.
+            btnDriver.MouseLeftButtonUp += delegate { DriverAction(); };
+            btnDriverNudge.MouseLeftButtonUp += delegate { InstallDriver(); };
+            driverClose.MouseLeftButtonUp += delegate { E.DismissDriverNudge(); driverBanner.Visibility = Visibility.Collapsed; Remeasure(cur); };
 
             // The right-hand link is whatever is left to say: the changelog once the title is doing the
             // installing, the release page while there is only news of a build, and the check itself otherwise.
@@ -670,6 +694,14 @@ namespace Ohman {
                     try { what = E.FactoryReset(); } catch (Exception ex) { Log.Write("factory reset: " + ex.Message); }
                     Dispatcher.BeginInvoke((Action)delegate {
                         try { SetAutostart(false); } catch (Exception ex) { Log.Write("reset autostart: " + ex.Message); }
+                        // The driver is the one thing Ohman may have put on the machine outside its own folder. Only
+                        // when it was us, and only with a yes: FanControl or LibreHardwareMonitor may be using it.
+                        if (E.S.DriverInstalledByOhman && !E.Hw.IsDemo && PawnIo.Installed
+                            && MessageBox.Show(IsVisible ? (Window)this : null,
+                                "Also remove the PawnIO driver " + Program.DisplayName + " installed?\n\nSay No if another program (FanControl, LibreHardwareMonitor) uses it.",
+                                Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) {
+                            if (E.RemoveDriver()) what += "  - removed the PawnIO driver\n";
+                        }
                         resetting = true;                    // ExitApp must delete the settings, not save them
                         string folder = "";
                         try { folder = System.IO.Path.GetDirectoryName(Log.Path); } catch { }
@@ -1625,9 +1657,101 @@ namespace Ohman {
                 }
             }
         }
+        // ---------- the driver row and the Home nudge ----------
+        /// <summary>The row's state, as one string: rebuilt only when it changes, since Refresh runs on a timer.</summary>
+        void UpdateDriverRow() {
+            var S = E.S;
+            bool demo = E.Hw.IsDemo;
+            bool installed = demo || PawnIo.Installed;
+            string title = "Hardware driver", sub, link = null;
+            bool showSwitch = installed && !E.DriverBusy;
+            string gains = "Adds CPU die temperature, power limits and throttle reasons"
+                + ((E.P.DriverFor & DriverFor.FanLevels) != 0 ? ", and fan levels on this board" : "");
+            if (E.DriverBusy) sub = E.DriverProgress;
+            else if (demo) sub = "Simulated · " + gains.Substring(5);
+            else if (!installed) { sub = gains; link = "Install"; }
+            else if (S.DriverRestartPending && !E.DriverReady) { sub = "Installed · restart Windows to finish"; link = "Restart now"; }
+            else if (!S.DriverUse) sub = "Off · " + gains.Substring(5);
+            else if (PawnIo.Outdated) { sub = "PawnIO " + PawnIo.InstalledVersion() + " · needs " + PawnIo.MinVersion + " or newer"; link = "Update"; }
+            else if (E.DriverReady) {
+                sub = "PawnIO " + PawnIo.InstalledVersion() + " · " + (E.Cpu != null ? "CPU registers" : "no CPU module") + (E.Ec != null ? " + EC" : "")
+                    + (E.Route == Engine.FanRoute.Ec ? " · fan levels via driver" : "");
+                if (S.DriverInstalledByOhman) link = "Remove";
+            } else { title = "Driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; }
+            string key = title + "|" + sub + "|" + (link ?? "") + "|" + showSwitch;
+            if (key != driverRowFor) {
+                driverRowFor = key;
+                txtDriverTitle.Text = title;
+                txtDriverSub.Text = sub;
+                btnDriver.Text = link ?? "";
+                btnDriver.Visibility = link != null ? Visibility.Visible : Visibility.Collapsed;
+                tgDriver.Visibility = showSwitch ? Visibility.Visible : Visibility.Collapsed;
+            }
+            tgDriver.IsChecked = demo || S.DriverUse;
+            // The Home nudge: the same install, from where the owner is.
+            string nudge = E.DriverNudge;
+            var want = nudge != null ? Visibility.Visible : Visibility.Collapsed;
+            if (nudge != null) {
+                txtDriverNudge.Text = nudge;
+                bool restart = S.DriverRestartPending;
+                txtDriverNudgeSub.Text = restart ? "The driver is installed and waits for a restart" : "Your firmware refuses fan levels through BIOS commands. " + Program.DisplayName + " can set them through a driver.";
+                btnDriverNudge.Text = restart ? "Restart now" : "Install driver";
+            }
+            if (driverBanner.Visibility != want) { driverBanner.Visibility = want; if (cur == Page.Home) Remeasure(cur); }
+        }
+        void DriverAction() {
+            string link = btnDriver.Text;
+            if (link == "Install" || link == "Update") InstallDriver();
+            else if (link == "Restart now") RestartWindows("the driver");
+            else if (link == "Troubleshoot") DriverCheck();
+            else if (link == "Remove") {
+                if (MessageBox.Show(IsVisible ? (Window)this : null,
+                        "Remove the PawnIO driver?\n\nOther programs may be using it too: FanControl and LibreHardwareMonitor install the same driver. "
+                        + Program.DisplayName + " goes back to the ACPI temperature and the firmware's own fan control.",
+                        Program.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                Slow(delegate { E.RemoveDriver(); });
+            }
+        }
+        void InstallDriver() {
+            if (E.Hw.IsDemo) { ShowToast("Simulated hardware: nothing to install", true); return; }
+            if (E.DriverBusy) return;
+            // Say what is about to happen once, the first time, in the words the installer itself uses.
+            if (!E.S.DriverInstalledByOhman && MessageBox.Show(IsVisible ? (Window)this : null,
+                    "Install the PawnIO driver?\n\n" + Program.DisplayName + " downloads the signed installer from its author (namazso, pawnio.eu, 3.4 MB), checks the signature, and installs it silently. "
+                    + "It is the same open-source driver FanControl and LibreHardwareMonitor use. No account, no prompt, and you can remove it here later.",
+                    Program.DisplayName, MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
+            Slow(delegate { E.InstallDriver(); });
+        }
+        void DriverCheck() {
+            btnDriver.Text = "checking…";
+            Slow(delegate {
+                string d;
+                try { d = Support.DriverReport(E); } catch (Exception ex) { d = "driver check failed: " + ex.Message; }
+                Log.Write(d);
+                Dispatcher.BeginInvoke((Action)delegate {
+                    driverRowFor = "?";
+                    UpdateDriverRow();
+                    bool copied = false;
+                    try { Clipboard.SetText(d); copied = true; } catch { }
+                    txtDiag.Text = d.TrimEnd();
+                    txtDiag.Visibility = Visibility.Visible;
+                    Remeasure(cur);
+                    ShowToast(copied ? "Copied - paste it into a GitHub issue or Discord" : "See below", false);
+                });
+            });
+        }
+        void RestartWindows(string why) {
+            if (MessageBox.Show(IsVisible ? (Window)this : null, "Restart Windows now to finish installing " + why + "?", Program.DisplayName,
+                    MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            try { Process.Start(new ProcessStartInfo("shutdown.exe", "/r /t 5 /c \"" + Program.DisplayName + ": finishing the driver install\"") { CreateNoWindow = true, UseShellExecute = false }); }
+            catch (Exception ex) { ShowToast("Restart failed: " + ex.Message, true); }
+        }
+
         /// <summary>The rail button and the Settings link both end here. The row is near the bottom of a page that
         /// scrolls, so arriving at Settings without this puts the thing that was clicked for off-screen.</summary>
-        void ShowUpdateRow() {
+        void ShowUpdateRow() { ShowRow(updateRow); }
+        void ShowDriverRow() { ShowRow(driverRow); }
+        void ShowRow(FrameworkElement row) {
             Navigate(Page.Settings, true);
             // After the page has laid out, or the row has no position yet. BringIntoView would do the smallest
             // scroll that makes it visible, which leaves it jammed against the bottom edge; this puts it a little
@@ -1636,8 +1760,9 @@ namespace Ohman {
                 try {
                     var content = scroll.Content as FrameworkElement;
                     if (content == null) return;
-                    double y = updateRow.TranslatePoint(new Point(0, 0), content).Y;
+                    double y = row.TranslatePoint(new Point(0, 0), content).Y;
                     scrollTo = Math.Max(0, Math.Min(scroll.ScrollableHeight, y - 96));
+                    if (screenshotPath != null) { scroll.ScrollToVerticalOffset(scrollTo); return; }   // no frames to ease over before the capture
                     if (!scrolling) { scrolling = true; CompositionTarget.Rendering += ScrollTick; }
                 } catch { }
             });
@@ -1707,6 +1832,7 @@ namespace Ohman {
                 txtGfxSub.Text = E.GpuModePending >= 0 && E.GpuModePending != E.GpuMode ? Engine.GpuModeNames[E.GpuModePending] + " after the next restart" : "Takes effect after a restart";
                 UpdateKeyStatus();
                 UpdateUpdateRow();
+                UpdateDriverRow();
                 tgSuppress.IsChecked = S.SuppressOgh;
                 tgHotkeys.IsChecked = S.Hotkeys;
                 tgEcoBattery.IsChecked = S.EcoOnBattery;
@@ -1753,7 +1879,16 @@ namespace Ohman {
             bigGpu.Text = double.IsNaN(s.GpuTemp) ? "--" : s.GpuTemp.ToString("0", CultureInfo.InvariantCulture);
             bigCpu.Foreground = TempBrush(s.CpuTemp);
             bigGpu.Foreground = TempBrush(s.GpuTemp);
-            subCpu.Text = "CPU" + (double.IsNaN(s.CpuLoad) ? "" : " · " + s.CpuLoad.ToString("0") + "%") + (double.IsNaN(s.CpuMhz) || s.CpuMhz <= 0 ? "" : " · " + (s.CpuMhz / 1000).ToString("0.0") + " GHz") + (double.IsNaN(s.CpuWatts) ? "" : " · " + s.CpuWatts.ToString("0") + " W");
+            subCpu.Text = "CPU" + (double.IsNaN(s.CpuLoad) ? "" : " · " + s.CpuLoad.ToString("0") + "%") + (double.IsNaN(s.CpuMhz) || s.CpuMhz <= 0 ? "" : " · " + (s.CpuMhz / 1000).ToString("0.0") + " GHz") + (double.IsNaN(s.CpuWatts) ? "" : " · " + s.CpuWatts.ToString("0") + " W")
+                + (s.Throttle.Length > 0 ? " · " + s.Throttle : "");
+            // Amber while the CPU says it is being held back, and the caption says why: that is the one word
+            // the ACPI zone could never supply, and the reason the driver exists on boards with working fans.
+            subCpu.Foreground = s.Throttle.Length > 0 ? Ui.Brush(Ui.Warn) : subCpuBrush;
+            subCpu.ToolTip = s.CpuFromDriver ? "CPU die temperature, read from the CPU through the driver" : null;
+            bool pl = !double.IsNaN(s.Pl1) || !double.IsNaN(s.Pl2);
+            if (pl) txtPl.Text = "PL1 " + (double.IsNaN(s.Pl1) ? "--" : s.Pl1.ToString("0") + " W") + " · PL2 " + (double.IsNaN(s.Pl2) ? "--" : s.Pl2.ToString("0") + " W");
+            var plWant = pl ? Visibility.Visible : Visibility.Collapsed;
+            if (plRow.Visibility != plWant) { plRow.Visibility = plWant; if (cur == Page.Settings) Remeasure(cur); }
             subGpu.Text = "GPU" + (double.IsNaN(s.GpuLoad) ? "" : " · " + s.GpuLoad.ToString("0") + "%") + (double.IsNaN(s.GpuWatts) ? "" : " · " + s.GpuWatts.ToString("0") + " W");
             txtFootRight.Text = s.BatteryPercent >= 0 && s.BatteryPercent <= 100 ? (s.OnBattery ? "Battery " : "AC · ") + s.BatteryPercent + "%" : "";
         }
@@ -1895,6 +2030,7 @@ namespace Ohman {
             else if (page == "keyboard" && E.Light != null) Navigate(Page.Keyboard, false);
             else if (page == "settings") Navigate(Page.Settings, false);
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
+            else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);

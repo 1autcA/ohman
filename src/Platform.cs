@@ -24,8 +24,17 @@ namespace Ohman {
         public int RpmPerLevel = 100;       // what one fan level is worth on screen; 0 = the levels are already a percentage
         public GuardLimits Guard = new GuardLimits();
         public bool Verified = true;        // false = built at run time from the firmware's answers (generic mode)
+        /// <summary>What the mailbox cannot do on this board and the driver can. This is the reason the Home
+        /// page asks the owner to install it; nothing here changes what the mailbox is asked for.</summary>
+        public DriverFor DriverFor = DriverFor.None;
+        /// <summary>This generation's EC layout, or null: no map, no EC access, ever (see Ec.cs for why).</summary>
+        public EcMap Ec;
         public string Notes;
     }
+
+    /// <summary>The controls a board's firmware refuses through the mailbox. Set from evidence, one board at a time.</summary>
+    [Flags]
+    public enum DriverFor { None = 0, FanLevels = 1, MaxFan = 2 }
 
     /// <summary>
     /// The software fan curve the vendor app runs on this model (OGH stores it in profiles.json). Fan level = RPM/100.
@@ -136,6 +145,21 @@ namespace Ohman {
         public static readonly string[] Victus = { "88F8", "8A25" };                                       // 0x00 default, 0x01 performance, 0x03 quiet
         public static readonly string[] VictusS = { "8A3D", "8B2F", "8BBE", "8BD4", "8BD5", "8C99", "8C9C" };   // 0x00 default, 0x01 performance
         public static bool In(string[] list, string board) { foreach (var b in list) if (string.Equals(b, board, StringComparison.OrdinalIgnoreCase)) return true; return false; }
+
+        /// <summary>The 2025 OMEN MAX. Its EC is laid out differently from every generation before it, and the
+        /// classic addresses written there corrupt its state (OmenCore issue #60: Caps Lock panic blink).</summary>
+        public static readonly string[] OmenMax = { "8D41", "8D42", "8D87", "8D88" };
+
+        /// <summary>Boards whose EC follows the OmenMon / omen-fan map. Board ids are assigned in order, so the
+        /// generation is in the id: 84xx (2018) through 8Bxx (2022) is where every published EC map was made -
+        /// OmenMon on 8A14, omen-fan on a 16-c0xxx, OmenCore's field reports on 8574 - and the 2025 MAX boards
+        /// prove that later ids cannot be assumed to match. Beyond 8B a board gets a map only by being probed.</summary>
+        public static bool EcLegacy(string board) {
+            if (string.IsNullOrEmpty(board) || board.Length < 4 || !In(Omen, board) || In(OmenMax, board)) return false;
+            int gen;
+            if (!int.TryParse(board.Substring(0, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out gen)) return false;
+            return gen >= 0x84 && gen <= 0x8B;
+        }
     }
 
     public static class Platforms {
@@ -197,8 +221,16 @@ namespace Ohman {
             p.TdpBase = haveInfo ? info.DefaultConcurrentTdp : 0;
             p.HasPowerGain = p.TdpBase > 0;
             p.HasGpuPower = false;                                        // the engine probes 0x21 and turns this on when the firmware answers
+            if (Families.EcLegacy(board)) p.Ec = EcMap.Legacy();
+            DriverFor need;
+            if (DriverNeeds.TryGetValue(board ?? "", out need)) p.DriverFor = need;
             return p;
         }
+
+        /// <summary>Boards whose mailbox is known to refuse a control the EC can do. Each entry is a field report.</summary>
+        static readonly Dictionary<string, DriverFor> DriverNeeds = new Dictionary<string, DriverFor>(StringComparer.OrdinalIgnoreCase) {
+            { "878A", DriverFor.FanLevels },     // OMEN 15 (2020): 0x2E answers rc 46 on every write, once a minute, forever; mode and max fan work
+        };
 
         // A verified laptop is one entry here. Everything a profile does not say has a default on PlatformProfile,
         // and anything the firmware can answer for itself (zone count, graphics modes, base TDP) is read at run time.

@@ -152,6 +152,92 @@ namespace Ohman {
             return with.Length <= UrlBudget ? with : url;   // almost always the latter; the clipboard carries it
         }
 
+        /// <summary>--driver and the Troubleshoot link: the driver alone, in enough detail to say why it is not
+        /// working from a pasted text. Every line is read-only and scrubbed like the rest of the report.</summary>
+        public static string DriverReport(Engine e) {
+            var sb = new StringBuilder();
+            sb.AppendLine("Ohman driver check  " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
+            sb.AppendLine("Ohman " + Program.Version + (e.Hw.IsDemo ? "  (SIMULATED HARDWARE - not a real reading)" : "") + "   board " + e.Board + "   " + Scrub(Platforms.ReadModel()));
+            try {
+                using (var s = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor"))
+                    foreach (ManagementObject o in s.Get()) sb.AppendLine("CPU:       " + o["Name"]);
+                using (var s = new ManagementObjectSearcher("SELECT Caption, Version FROM Win32_OperatingSystem"))
+                    foreach (ManagementObject o in s.Get()) sb.AppendLine("Windows:   " + o["Caption"] + " " + o["Version"]);
+            } catch { }
+            sb.AppendLine("----------------------------------------");
+            DriverSection(sb, e);
+            return sb.ToString();
+        }
+
+        static string RegDword(string key, string value) {
+            try {
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key)) {
+                    if (k == null) return "no key";
+                    object v = k.GetValue(value);
+                    return v == null ? "not set" : Convert.ToInt32(v) != 0 ? "on" : "off";
+                }
+            } catch (Exception ex) { return "unreadable (" + ex.Message + ")"; }
+        }
+        static string Num(double v, string unit) { return double.IsNaN(v) ? "--" : v.ToString("0", CultureInfo.InvariantCulture) + unit; }
+
+        /// <summary>The driver section shared by the support report and the driver check.</summary>
+        static void DriverSection(StringBuilder sb, Engine e) {
+            sb.AppendLine("Driver (PawnIO, optional)");
+            if (e.Hw.IsDemo) { sb.AppendLine("  (simulated hardware: a pretend driver with pretend registers)"); }
+            else {
+                Version v = PawnIo.InstalledVersion();
+                sb.AppendLine("  installed:   " + (v != null ? v + "  at " + Scrub(PawnIo.InstallLocation() ?? "?") + (PawnIo.Outdated ? "   <- older than " + PawnIo.MinVersion + ", update it" : "") : "no"));
+                sb.AppendLine("  service:     " + PawnIo.ServiceState());
+                sb.AppendLine("  setting:     " + (e.S.DriverUse ? "on" : "off") + "   restart pending: " + (e.S.DriverRestartPending ? "yes" : "no") + "   installed by Ohman: " + (e.S.DriverInstalledByOhman ? "yes" : "no"));
+                // The two Windows features that decide whether a driver loads at all. PawnIO is signed and
+                // HVCI-compatible, so both should read "on" without trouble; they are here because "on" plus a
+                // driver that will not load is a different bug from "off".
+                sb.AppendLine("  Secure Boot: " + RegDword(@"SYSTEM\CurrentControlSet\Control\SecureBoot\State", "UEFISecureBootEnabled")
+                    + "   Memory Integrity: " + RegDword(@"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity", "Enabled"));
+                var others = new List<string>();
+                foreach (string name in new string[] { "OmenMon", "FanControl", "LibreHardwareMonitor", "HWiNFO64", "HWiNFO32", "OmenCore", "OmenCommandCenterBackground", "ThrottleStop", "XTU" })
+                    try { if (Process.GetProcessesByName(name).Length > 0) others.Add(name); } catch { }
+                sb.AppendLine("  other EC/MSR users running: " + (others.Count > 0 ? string.Join(", ", others.ToArray()) : "none seen"));
+            }
+            sb.AppendLine("  cpu module:  " + (e.Cpu != null ? e.Cpu.Describe : "unavailable (" + Scrub(e.DriverWhy) + ")"));
+            sb.AppendLine("  ec map:      " + (e.Ec != null ? e.Ec.Map.Name + (e.Ec.Resting ? "   (resting after " + e.Ec.Timeouts + " timeouts)" : "") : e.P != null && e.P.Ec != null ? "have one, not open (" + Scrub(e.DriverWhy) + ")" : "none for board " + e.Board + " - EC is never touched here"));
+            sb.AppendLine("  needs:       " + (e.P != null && e.P.DriverFor != DriverFor.None ? e.P.DriverFor.ToString() : "nothing the mailbox cannot do") + "   fan route: " + e.Route);
+            if (e.Cpu == null && e.Ec == null) return;
+            sb.AppendLine();
+            sb.AppendLine("Readings (driver on the left, what Ohman had without it on the right)");
+            CpuTelemetry t = null;
+            try { t = e.Cpu != null ? e.Cpu.Poll() : null; } catch (Exception ex) { sb.AppendLine("  cpu poll failed: " + Scrub(ex.Message)); }
+            if (t != null) {
+                System.Threading.Thread.Sleep(600);
+                try { CpuTelemetry t2 = e.Cpu.Poll(); if (!double.IsNaN(t2.Watts)) t.Watts = t2.Watts; if (!double.IsNaN(t2.DieTemp)) t.DieTemp = t2.DieTemp; } catch { }
+                double acpi = double.NaN;
+                try {
+                    var cat = new PerformanceCounterCategory("Thermal Zone Information");
+                    foreach (string n in cat.GetInstanceNames())
+                        using (var pc = new PerformanceCounter("Thermal Zone Information", "Temperature", n, true)) { double k = pc.NextValue(); if (k >= 283 && k <= 398 && (double.IsNaN(acpi) || k > acpi)) acpi = k; }
+                    if (!double.IsNaN(acpi)) acpi = Math.Round(acpi - 273.15);
+                } catch { }
+                int mailbox = -1;
+                try { mailbox = e.Hw.GetTemperature(); } catch { }
+                sb.AppendLine("  die temperature: " + Num(t.DieTemp, " C").PadRight(10) + " ACPI zone: " + Num(acpi, " C").PadRight(10) + " mailbox 0x23 (ambient): " + (mailbox >= 0 ? mailbox + " C" : "--") + (t.TjMax > 0 ? "   TjMax " + t.TjMax : ""));
+                sb.AppendLine("  power limits:    PL1 " + Num(t.Pl1, " W") + (t.Pl1On ? "" : " (off)") + "   PL2 " + Num(t.Pl2, " W") + (t.Pl2On ? "" : " (off)") + (t.PlLocked ? "   locked by firmware" : "") + "   package " + Num(t.Watts, " W"));
+                sb.AppendLine("  throttling:      " + (t.Throttle.Length > 0 ? t.Throttle : "no"));
+            }
+            if (e.Ec != null) {
+                EcReading r = e.Ec.Read();
+                int[] f = null;
+                try { f = e.Hw.GetFanLevels(); } catch { }
+                if (!r.Any) sb.AppendLine("  ec: no answer (" + Scrub(e.Ec.LastError) + ")");
+                else {
+                    sb.AppendLine("  ec temperatures: CPU " + (r.Cpu >= 0 ? r.Cpu + " C" : "--") + "   GPU " + (r.Gpu >= 0 ? r.Gpu + " C" : "--"));
+                    sb.AppendLine("  ec fan rpm:      " + (r.Rpm1 >= 0 ? r.Rpm1.ToString() : "--") + " / " + (r.Rpm2 >= 0 ? r.Rpm2.ToString() : "--")
+                        + "   mailbox 0x2D: " + (f != null ? (f[0] * 100) + " / " + (f[1] * 100) : "--") + "   <- these should agree; if not, the map does not fit this board");
+                    sb.AppendLine("  ec control:      manual 0x" + (r.Manual >= 0 ? r.Manual.ToString("X2") : "??") + "   countdown " + (r.Countdown >= 0 ? r.Countdown + " s" : "--")
+                        + "   mode 0x" + (r.Mode >= 0 ? r.Mode.ToString("X2") : "??") + "   charge " + (r.Charge >= 0 ? r.Charge.ToString() : "--"));
+                }
+            }
+        }
+
         public static string Report(Engine e) {
             var sb = new StringBuilder();
             sb.AppendLine("Ohman support report  " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
@@ -276,6 +362,10 @@ namespace Ohman {
                 }
                 sb.AppendLine("  If this never moves while the machine is busy, it is not the CPU. Say so in the report.");
             } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
+            sb.AppendLine();
+
+            // ---- the driver, if there is one, and what it reads
+            DriverSection(sb, e);
             sb.AppendLine();
 
             // ---- what HP's own app concluded about this machine

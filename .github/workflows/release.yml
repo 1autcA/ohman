@@ -33,6 +33,8 @@ jobs:
           # and the exe carries the fonts inside it.
           New-Item -ItemType Directory dist\Ohman-$tag\fonts | Out-Null
           Copy-Item fonts\OFL.txt dist\Ohman-$tag\fonts\
+          # LGPL-2.1 asks the same of the PawnIO modules embedded in the exe.
+          Copy-Item third_party dist\Ohman-$tag\third_party -Recurse
           Copy-Item preview dist\Ohman-$tag\preview -Recurse
           New-Item -ItemType Directory dist\Ohman-$tag\tools | Out-Null
           Copy-Item tools\*.cmd, tools\*.ps1, tools\omenprobe.exe dist\Ohman-$tag\tools\

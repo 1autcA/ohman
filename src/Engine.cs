@@ -112,6 +112,10 @@ namespace Ohman {
         public bool Guard = true;                   // thermal guard: force max fan when the machine runs away
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
         public string KeyCommand = "";              // KeyAction.Run: command line the OMEN key starts
+        public bool DriverUse = true;               // use the PawnIO driver when it is installed
+        public bool DriverInstalledByOhman = false; // we put it there, so Uninstall may offer to take it away
+        public bool DriverRestartPending = false;   // the installer asked for a restart and has not had one
+        public string DriverNudgeDismissed = "";    // the Ohman version whose Home-page nudge was closed
         public bool NoPersist;                      // set when --set overrides are in effect: never write them back to the file
         public int SavedModeOverride = -1;          // while battery forces Eco, the file keeps the user's own mode
 
@@ -192,6 +196,10 @@ namespace Ohman {
                         case "Guard": if (bool.TryParse(v, out b)) s.Guard = b; break;
                         case "UpdateOnLaunch": if (bool.TryParse(v, out b)) s.UpdateOnLaunch = b; break;
                         case "KeyCommand": s.KeyCommand = v; break;
+                        case "DriverUse": if (bool.TryParse(v, out b)) s.DriverUse = b; break;
+                        case "DriverInstalledByOhman": if (bool.TryParse(v, out b)) s.DriverInstalledByOhman = b; break;
+                        case "DriverRestartPending": if (bool.TryParse(v, out b)) s.DriverRestartPending = b; break;
+                        case "DriverNudgeDismissed": s.DriverNudgeDismissed = v.Length > 24 ? v.Substring(0, 24) : v; break;
                     }
                 }
             } catch (Exception ex) { Log.Write("settings apply " + k + ": " + ex.Message); }
@@ -244,6 +252,10 @@ namespace Ohman {
                 sb.AppendLine("KeyCommand=" + KeyCommand);
                 sb.AppendLine("Guard=" + Guard);
                 sb.AppendLine("UpdateOnLaunch=" + UpdateOnLaunch);
+                sb.AppendLine("DriverUse=" + DriverUse);
+                sb.AppendLine("DriverInstalledByOhman=" + DriverInstalledByOhman);
+                sb.AppendLine("DriverRestartPending=" + DriverRestartPending);
+                sb.AppendLine("DriverNudgeDismissed=" + DriverNudgeDismissed);
                 sb.AppendLine("MaxBackWhenCool=" + MaxBackWhenCool);
                 sb.AppendLine("MaxStopAfterMin=" + MaxStopAfterMin);
                 sb.AppendLine("ManualLinked=" + ManualLinked);
@@ -304,6 +316,18 @@ namespace Ohman {
         public ILighting Light;                             // null = this keyboard has no controllable lighting (or read-only board)
         public Rgb[] LightColors = new Rgb[0];              // what the app believes the zones show
         public bool ReadOnly { get { return !Supported && !Hw.IsDemo; } }
+
+        // ---------- the driver ----------
+        // Optional, and only ever additive: with it the CPU's own temperature and power limits are read, and on
+        // a board whose mailbox refuses fan levels the EC is written instead. Without it Ohman is what it was.
+        public CpuRegisters Cpu;                            // null = no driver, switched off, or the CPU is not one we have a module for
+        public EmbeddedController Ec;                       // null = no driver, or this board has no EC map (never guessed)
+        public string DriverWhy = "";                       // why Cpu and Ec are null, for the row in Settings
+        public volatile bool DriverBusy;                    // an install or removal is running
+        public volatile string DriverProgress = "";         // its current step, for the row
+        public enum FanRoute { Mailbox, Ec }
+        public FanRoute Route = FanRoute.Mailbox;           // where fan levels go
+        public bool DriverReady { get { return Cpu != null || Ec != null; } }
 
         ManagementEventWatcher watcher;
         System.Threading.Timer heartbeat;
@@ -415,6 +439,7 @@ namespace Ohman {
                 catch (Exception ex) { Log.Write("graphics mode read: " + ex.Message + " - graphics switching not offered"); }
                 Log.Write("BIOS ok: fans=" + FanCount + " policy=v" + Info.ThermalPolicy + " swFan=" + Info.SwFanControl + " defPL4=" + Info.DefaultPl4 + "W baseTdp=" + Info.DefaultConcurrentTdp + "W raw=" + Info.Hex + (Hw.IsDemo ? " (DEMO)" : ""));
             } catch (Exception ex) { BiosOk = false; LastError = ex.Message; Log.Write("BIOS self-test FAILED: " + ex.Message); }
+            InitDriver();           // reads only; the fan route it may pick is not written until ApplyAll below
             // Everything above only looked. Everything below changes the machine, and the support report wants the
             // first half without the second: it must describe this laptop, not reconfigure it.
             if (!apply) { InitLight(); Log.Write("probe only: nothing was applied"); return; }
@@ -543,7 +568,8 @@ namespace Ohman {
                     lock (applySync) {
                         Try(delegate { Hw.SetMode(P.ModeBalanced, OnBattery); }, "Reset mode");
                         MaxFan(false, "Reset max fan");
-                        WriteLevels(P.Curve.Fallback, P.Curve.Fallback, "Reset fan level");
+                        if (Route == FanRoute.Ec) ReleaseEcFans("reset");
+                        else WriteLevels(P.Curve.Fallback, P.Curve.Fallback, "Reset fan level");
                     }
                     done.Add("set the mode back to balanced and handed the fans back");
                 } catch (Exception ex) { Log.Write("reset firmware: " + ex.Message); }
@@ -602,14 +628,20 @@ namespace Ohman {
                 // exactly the case Fallback exists for.
                 int cur = Math.Max(curLevel1, curLevel2);
                 int want = quiet && cur >= 0 ? cur : Math.Max(P.Curve.Fallback, cur);
-                lock (applySync) WriteLevels(want, want, "Fan level on exit");
-                Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
+                // On the EC route the fans are handed back rather than parked: the EC resumes its own curve on
+                // its own clock once manual mode is cleared, and there is no replay of the last level to survive.
+                if (Route == FanRoute.Ec) { lock (applySync) ReleaseEcFans("exit"); }
+                else {
+                    lock (applySync) WriteLevels(want, want, "Fan level on exit");
+                    Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
+                }
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }
         }
 
         public void Dispose() {
             stopping = true; try { workReady.Set(); } catch { }
             try { if (fx != null) fx.Dispose(); } catch { }
+            CloseDriver();
             try { if (fanTimer != null) fanTimer.Dispose(); } catch { }
             try { if (heartbeat != null) heartbeat.Dispose(); } catch { }
             try { if (guard != null) guard.Dispose(); } catch { }
@@ -676,29 +708,193 @@ namespace Ohman {
         ///
         /// So count the refusals instead and stop asking once the firmware has made itself clear. Max fan and the
         /// performance modes go through their own commands and are unaffected.</summary>
-        public bool CanSetFanLevels { get { return !fanLevelsRefused; } }
+        public bool CanSetFanLevels { get { return !fanLevelsRefused || Route == FanRoute.Ec; } }
         const int FanWriteGiveUp = 8;
         bool fanLevelsRefused;
 
         bool WriteLevels(int l1, int l2, string what) {
-            if (fanLevelsRefused) return false;
             // ClampOrOff, not Clamp. Clamp floors at the profile's own Floor, which is 18 on every profile we
             // ship, so it turned every 0 back into 18 on the way out - the last step of the path, after the
             // editor, the sliders and the settings had all been taught to carry one. The whole of "let the fans
             // stop" was inert and the only place it showed was the fans not stopping.
             l1 = P.Curve.ClampOrOff(l1);
             l2 = P.Curve.ClampOrOff(l2);
+            if (Route == FanRoute.Ec) return WriteLevelsEc(l1, l2, what);
+            if (fanLevelsRefused) return false;
             if (Try(delegate { Hw.GetFanCount(); Hw.SetFanLevels(l1, l2); }, what)) { curLevel1 = l1; curLevel2 = l2; fanWriteFailures = 0; fanFailureShown = false; return true; }
             fanWriteFailures++;
             if (fanWriteFailures >= FanWriteGiveUp) {
                 fanLevelsRefused = true;
                 Log.Write("giving up on fan levels after " + fanWriteFailures + " refusals; this firmware will not take them. Max fan and the modes are unaffected.");
+                // The refusal is exactly what the EC route exists for. With the driver and a map, switch and
+                // carry on; without, tell the owner, and the Home page will point at the driver if a map exists.
+                if (ChooseRoute() == FanRoute.Ec) { Say("Fan levels now go through the driver"); return WriteLevelsEc(l1, l2, what); }
                 Fire(Toast, "This firmware will not take fan levels; its own curve stays in charge", true);
+                Changed();
             } else if (fanWriteFailures >= 3 && !fanFailureShown) {
                 fanFailureShown = true;
                 Fire(Toast, "Fan writes failing; firmware curve will take over", true);
             }
             return false;
+        }
+
+        /// <summary>Fan levels through the EC. The mailbox's max-fan flag is left alone on purpose: it works on
+        /// these boards, and the guard still uses it. Three failures in a row and the route goes back to the
+        /// mailbox, which on a refusing board means the firmware's own curve - never nothing.</summary>
+        int ecFailures;
+        bool WriteLevelsEc(int l1, int l2, string what) {
+            if (Ec == null) { Route = FanRoute.Mailbox; return false; }
+            if (Ec.HoldFans(l1, l2)) { curLevel1 = l1; curLevel2 = l2; ecFailures = 0; LastError = ""; return true; }
+            ecFailures++;
+            LastError = Ec.LastError;
+            Log.Write("FAIL " + what + " via EC: " + Ec.LastError);
+            if (ecFailures >= 3) {
+                Route = FanRoute.Mailbox;
+                Log.Write("EC fan route abandoned after " + ecFailures + " failures; back to the mailbox");
+                Fire(Toast, "The driver could not hold the fans (" + Ec.LastError + "); firmware curve in charge", true);
+                Changed();
+            }
+            return false;
+        }
+        void ReleaseEcFans(string why) {
+            if (Ec == null) return;
+            if (Ec.ReleaseFans()) Log.Write("EC fans released on " + why + "; the controller resumes its own curve");
+            else Log.Write("EC fans NOT released on " + why + ": " + Ec.LastError);
+            curLevel1 = curLevel2 = -1;
+        }
+
+        // ---------- the driver ----------
+        /// <summary>Open what the driver offers on this machine: the CPU's registers always, the EC only where
+        /// the profile carries a map. Nothing here writes. Called at Init and again after an install.</summary>
+        void InitDriver() {
+            CloseDriver();
+            DriverWhy = "";
+            if (Hw.IsDemo) {
+                // --board 878A exists to show what an owner of that board would see, and what they see first is
+                // the nudge; so a simulated board that asks for the driver simulates not having it.
+                if (Platforms.BoardOverride != null && P.DriverFor != DriverFor.None) { DriverWhy = "not installed"; return; }
+                Cpu = new DemoCpu();
+                Ec = new EmbeddedController(new DemoEcPorts(), EcMap.Legacy());
+                Route = ChooseRoute();
+                return;
+            }
+            if (!S.DriverUse) { DriverWhy = "switched off"; return; }
+            if (!PawnIo.Installed) { DriverWhy = "not installed"; return; }
+            if (PawnIo.Outdated) { DriverWhy = "PawnIO " + PawnIo.InstalledVersion() + " is older than " + PawnIo.MinVersion + "; update it"; return; }
+            string why;
+            Cpu = CpuRegisters.Open(out why);
+            if (Cpu == null) {
+                // The one open that says whether the driver is alive at all. A pending restart is the common
+                // reason, and an install that has had its restart clears the flag here.
+                DriverWhy = why ?? "unavailable";
+                Log.Write("driver: CPU registers unavailable: " + DriverWhy + " · service " + PawnIo.ServiceState());
+                if (!S.DriverRestartPending && PawnIo.ServiceState() != "running") { DriverWhy += " · the PawnIO service is " + PawnIo.ServiceState(); }
+                return;
+            }
+            if (S.DriverRestartPending) { S.DriverRestartPending = false; S.Save(); }
+            if (P.Ec != null) {
+                PawnIoModule m = PawnIo.Open("LpcACPIEC", out why);
+                if (m != null) Ec = new EmbeddedController(new PawnIoEcPorts(m), P.Ec);
+                else Log.Write("driver: EC module unavailable: " + why);
+            }
+            Route = ChooseRoute();
+            Log.Write("driver: PawnIO " + PawnIo.InstalledVersion() + " · cpu=" + Cpu.Describe + " · ec=" + (Ec != null ? P.Ec.Name : "no map for this board") + " · fan route " + Route);
+        }
+        void CloseDriver() {
+            try { if (Cpu != null) Cpu.Dispose(); } catch { }
+            try { if (Ec != null) Ec.Dispose(); } catch { }
+            Cpu = null; Ec = null;
+            Route = FanRoute.Mailbox;
+        }
+        /// <summary>Where fan levels should go: the EC only when this board's mailbox cannot take them, whether
+        /// the profile said so or the firmware has just shown it.</summary>
+        FanRoute ChooseRoute() {
+            bool need = (P.DriverFor & DriverFor.FanLevels) != 0 || fanLevelsRefused;
+            Route = (Ec != null && need && !Ec.Resting) ? FanRoute.Ec : FanRoute.Mailbox;
+            return Route;
+        }
+
+        /// <summary>The line the Home page shows, or null when there is nothing to ask for: the driver is in and
+        /// working, the owner closed the note on this version, or this board has nothing to gain from it.</summary>
+        public string DriverNudge {
+            get {
+                if (DriverReady || !S.DriverUse || DriverBusy) return null;
+                if (S.DriverNudgeDismissed == Program.Version) return null;
+                if (S.DriverRestartPending) return "Restart Windows to finish installing the driver";
+                bool fans = (P.DriverFor & DriverFor.FanLevels) != 0 || (fanLevelsRefused && P.Ec != null);
+                return fans ? "Fan levels on this board need a driver" : null;
+            }
+        }
+        public void DismissDriverNudge() { S.DriverNudgeDismissed = Program.Version; S.Save(); Changed(); }
+
+        /// <summary>Download, verify and install the driver, then open it. Runs on the caller's thread and takes
+        /// as long as the download takes; the row in Settings follows DriverProgress.</summary>
+        public void InstallDriver() {
+            if (DriverBusy) return;
+            DriverBusy = true;
+            DriverProgress = "starting…";
+            if (!S.DriverUse) { S.DriverUse = true; S.Save(); }      // asking for it is switching it on
+            Changed();
+            try {
+                string error;
+                DriverInstallResult r = PawnIo.Install(delegate(string step) { DriverProgress = step; Changed(); }, out error);
+                switch (r) {
+                    case DriverInstallResult.Installed:
+                        S.DriverInstalledByOhman = true;
+                        S.DriverRestartPending = false;
+                        S.Save();
+                        lock (applySync) {
+                            FanRoute before = Route;
+                            InitDriver();
+                            if (Route != before) ApplyFanCore();
+                        }
+                        Say(DriverReady ? "Driver installed" : "Driver installed, but it could not be opened: " + DriverWhy);
+                        break;
+                    case DriverInstallResult.RestartNeeded:
+                        S.DriverInstalledByOhman = true;
+                        S.DriverRestartPending = true;
+                        S.Save();
+                        DriverWhy = "installed · restart Windows to finish";
+                        Say("Driver installed · restart Windows to finish");
+                        break;
+                    default:
+                        DriverWhy = error ?? "install failed";
+                        Fire(Toast, "Driver install failed: " + DriverWhy, true);
+                        break;
+                }
+            } finally { DriverBusy = false; DriverProgress = ""; Changed(); }
+        }
+
+        /// <summary>Remove the driver again. Ours to offer only when we put it there; another app may still be
+        /// using it, which the dialog says before this is called.</summary>
+        public bool RemoveDriver() {
+            if (DriverBusy) return false;
+            DriverBusy = true;
+            DriverProgress = "removing…";
+            Changed();
+            try {
+                lock (applySync) {
+                    if (Route == FanRoute.Ec) ReleaseEcFans("driver removal");
+                    CloseDriver();
+                }
+                string error;
+                bool ok = PawnIo.Uninstall(out error);
+                if (ok) { S.DriverInstalledByOhman = false; S.DriverRestartPending = false; S.Save(); DriverWhy = "not installed"; Say("Driver removed"); }
+                else { DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); InitDriver(); }
+                lock (applySync) ApplyFanCore();
+                return ok;
+            } finally { DriverBusy = false; DriverProgress = ""; Changed(); }
+        }
+
+        public void SetDriverUse(bool on) {
+            S.DriverUse = on;
+            S.Save();
+            lock (applySync) {
+                if (Route == FanRoute.Ec && !on) ReleaseEcFans("driver switched off");
+                InitDriver();
+                ApplyFanCore();
+            }
+            Changed();
         }
         bool fanFailureShown;
         FanMode fanBeforeMax { get { return (FanMode)S.FanBeforeMax; } set { S.FanBeforeMax = (int)value; } }
@@ -1243,7 +1439,8 @@ namespace Ohman {
             sb.AppendLine("settings: mode=" + ModeName + " (BIOS 0x" + ModeByte.ToString("X2") + (OnBattery ? ", DC" : ", AC") + ") fan=" + S.Fan + " " + S.Fan1 + "/" + S.Fan2 + " tdp=" + CurrentTdp + "W gpu=" + EffectiveGpu + (S.GpuAuto ? "(auto)" : "") + " key=" + KeyId + "/" + KeyData + "→" + S.Key + " ecoCool=" + S.EcoCool);
             sb.AppendLine("graphics: " + (GpuMode >= 0 && GpuMode < 4 ? GpuModeNames[GpuMode] : "unknown") + " (offered mask 0x" + Info.GpuModes.ToString("X2") + ")" + (GpuModePending >= 0 ? " -> " + GpuModeNames[GpuModePending] + " after restart" : ""));
             sb.AppendLine("lighting: " + (Light == null ? "none" : Light.Describe + " mode=" + S.Light + " level=" + S.LightLevel + " colours=" + S.LightColors + " windowsControl=" + WinLighting.HasControl));
-            sb.AppendLine("fan drive: written " + curLevel1 + "/" + curLevel2 + "  cpu " + Fmt(CpuTemp) + "  gpu " + Fmt(GpuTemp) + "  ir " + Fmt(IrTemp) + "  guard=" + GuardActive + "  writeFailures=" + fanWriteFailures);
+            sb.AppendLine("fan drive: written " + curLevel1 + "/" + curLevel2 + "  cpu " + Fmt(CpuTemp) + "  gpu " + Fmt(GpuTemp) + "  ir " + Fmt(IrTemp) + "  guard=" + GuardActive + "  writeFailures=" + fanWriteFailures + "  route=" + Route);
+            sb.AppendLine("driver: " + (DriverReady ? "PawnIO " + (Hw.IsDemo ? "simulated" : "" + PawnIo.InstalledVersion()) + " · cpu " + (Cpu != null ? Cpu.Describe : "none") + " · ec " + (Ec != null ? Ec.Map.Name + (Ec.Resting ? " (resting)" : "") : "none") : "none (" + DriverWhy + ")"));
             sb.AppendLine("last heartbeat: " + (LastHeartbeat == DateTime.MinValue ? "never" : LastHeartbeat.ToString("HH:mm:ss")) + "   last key event: " + (LastEventTime == DateTime.MinValue ? "none" : LastEventId + "/" + LastEventData + " at " + LastEventTime.ToString("HH:mm:ss")));
             return sb.ToString();
         }

@@ -12,6 +12,10 @@ namespace Ohman {
 
     public sealed class SensorSnapshot {
         public double CpuTemp = double.NaN, CpuLoad = double.NaN, CpuMhz = double.NaN, CpuWatts = double.NaN;
+        public double AcpiTemp = double.NaN;              // the hottest ACPI zone, kept beside CpuTemp when the driver supplies that
+        public bool CpuFromDriver;                        // CpuTemp is the package sensor read through the driver
+        public double Pl1 = double.NaN, Pl2 = double.NaN; // package power limits the CPU is holding (driver only)
+        public string Throttle = "";                      // "" or why the CPU is being held back (driver only)
         public DateTime GpuRead = DateTime.MinValue;      // when the GPU numbers below were actually measured
         public double GpuTemp = double.NaN, GpuLoad = double.NaN, GpuWatts = double.NaN, GpuMhz = double.NaN;
         public bool OnBattery;
@@ -40,6 +44,11 @@ namespace Ohman {
         // interval costs one, and the event still ends it immediately.
         readonly ManualResetEvent wake = new ManualResetEvent(false);
         public event Action<SensorSnapshot> Updated;
+        /// <summary>Where the CPU's own registers are, when there is a driver. Asked on every tick rather than
+        /// held, because the engine opens and closes them as the driver is installed and removed.</summary>
+        public Func<CpuRegisters> CpuSource;
+        int cpuPollFailures;
+        bool disagreementLogged;
 
         public Sensors() { }
 
@@ -119,7 +128,26 @@ namespace Ohman {
                         if (k >= 283 && k <= 398 && (double.IsNaN(hot) || k > hot)) hot = k;
                     } catch { }
                 }
-                if (!double.IsNaN(hot)) s.CpuTemp = Math.Round(hot - 273.15, 1);
+                if (!double.IsNaN(hot)) s.AcpiTemp = Math.Round(hot - 273.15, 1);
+                s.CpuTemp = s.AcpiTemp;
+                // The driver's number wins where there is one: it is the package sensor itself, not whichever
+                // zone the firmware chose to expose. The zone stays in the snapshot for the report to compare.
+                double driverWatts = double.NaN;
+                CpuRegisters cpu = CpuSource == null ? null : CpuSource();
+                if (cpu != null) {
+                    try {
+                        CpuTelemetry ct = cpu.Poll();
+                        if (!double.IsNaN(ct.DieTemp)) { s.CpuTemp = ct.DieTemp; s.CpuFromDriver = true; }
+                        if (ct.Pl1On) s.Pl1 = ct.Pl1;
+                        if (ct.Pl2On) s.Pl2 = ct.Pl2;
+                        s.Throttle = ct.Throttle ?? "";
+                        driverWatts = ct.Watts;
+                        if (!disagreementLogged && s.CpuFromDriver && !double.IsNaN(s.AcpiTemp) && Math.Abs(s.CpuTemp - s.AcpiTemp) > 15) {
+                            disagreementLogged = true;
+                            Log.Write("cpu temperature: the driver reads " + s.CpuTemp.ToString("0") + ", the ACPI zone " + s.AcpiTemp.ToString("0") + "; the driver's number is used");
+                        }
+                    } catch (Exception ex) { if (cpuPollFailures++ == 0) Log.Write("driver cpu poll: " + ex.Message); }
+                }
                 try { if (cpuUtil != null) s.CpuLoad = Math.Min(100, cpuUtil.NextValue()); } catch { }
                 try {
                     if (cpuFreq != null) {
@@ -132,7 +160,9 @@ namespace Ohman {
                         s.CpuMhz = (!double.IsNaN(pct) && pct > 1 && pct < 500) ? base_ * pct / 100.0 : double.NaN;
                     }
                 } catch { }
-                try { if (cpuPower != null) s.CpuWatts = Watts(cpuPower.NextValue() / 1000.0); } catch { }
+                // Package power from the energy counter the driver reads, when there is one: the same RAPL
+                // figure the Energy Meter counter reports, without the counter's missed-window spikes.
+                try { if (!double.IsNaN(driverWatts)) s.CpuWatts = Watts(driverWatts); else if (cpuPower != null) s.CpuWatts = Watts(cpuPower.NextValue() / 1000.0); } catch { }
                 try {
                     var ps = System.Windows.Forms.SystemInformation.PowerStatus;
                     s.OnBattery = ps.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline;

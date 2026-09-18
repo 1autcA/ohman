@@ -9,8 +9,9 @@
 </p>
 
 Don't you love paying $2,500 for a laptop and still having ads pushed down your throat by mandatory software
-with no alternative? Ohman is the alternative. One executable, no services, no drivers, no account, no ads.
-Same firmware interface as OMEN Gaming Hub, same bytes, nothing else.
+with no alternative? Ohman is the alternative. Modes, fan curves, power, graphics switching and keyboard
+lighting in one 1.3 MB executable, replacing OMEN Gaming Hub and OMEN Light Studio and speaking the same
+firmware interface, without any ads, services, drivers, or accounts.
 
 ## Features
 

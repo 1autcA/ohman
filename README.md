@@ -27,13 +27,15 @@ Same firmware interface as OMEN Gaming Hub, same bytes, nothing else.
 | **Live** | CPU and GPU temperature, CPU package watts, fan speeds, load, clocks, chassis sensor, battery. CPU temperature on the tray icon. |
 | **Tray** | Modes, fan mode, the backlight, refresh rate and graphics, without opening the window. |
 | **OMEN key** | Opens the panel, cycles modes, toggles max fan, or runs a command of your choice. OGH's key handler is stopped, reversibly. Shift+F11 cycles modes; Ctrl+Alt+E/B/P/M/O for the rest. |
-| **Safety** | A thermal guard forces max fan on a hot CPU, a hot chassis or stalled fans. It can be switched off, with a warning. Fans are never set below 1800 rpm. |
-| **Extras** | Starts with Windows without a UAC prompt, Eco on battery, Windows power-mode sync, an on-screen flash when a key changes something, an update check that never installs anything for you. |
+| **Safety** | A thermal guard forces max fan on a hot CPU, a hot chassis or stalled fans. It can be switched off, with a warning. Levels between 1 and 1800 rpm are refused, because no fan holds them; 0 is allowed, and stops them. |
+| **Updates** | A newer build is fetched in the background and waits. Restart into it when it suits you, from Settings or the rail. Nothing is installed behind your back. |
+| **Extras** | Starts with Windows without a UAC prompt, Eco on battery, Windows power-mode sync, and an on-screen flash when a key changes something. |
 
 Settings live in `ohman.state`, everything the app does goes to `ohman.log`. Both sit beside the executable.
 
-To remove it: turn off **Start with Windows** and **Take over the OMEN key** in Settings, then delete the
-folder. Those two are the only things Ohman writes outside it.
+To remove it: **Uninstall** in Settings. That undoes everything Ohman changed on the laptop, hands the fans
+and the keyboard back, re-enables OMEN Gaming Hub's tasks, deletes its own settings and log, and quits. Delete
+the folder afterwards and nothing of it is left.
 
 ## Install
 
@@ -80,7 +82,8 @@ mode (`0x52`), keyboard lighting (`0x20009`), plus read-only queries. The OMEN k
 [docs/research.md](docs/research.md), including the things that are *not* safe to do and why.
 
 - The firmware forgets a user-defined fan state after about 120 seconds, so Ohman keeps renewing it. That is
-  why it has to stay running to hold a curve. It never writes a level below 1800 rpm.
+  why it has to stay running to hold a curve. It never writes a level between 1 and 1800 rpm, because no fan
+  holds one; 0 it will write, because that is off and HP's own tables ask for it.
 - The thermal guard runs on its own ten-second timer and forces maximum fan whatever mode you picked.
 
 ## Adding a laptop in code
@@ -105,9 +108,12 @@ request; see [CONTRIBUTING.md](CONTRIBUTING.md).
 |---|---|
 | `tools\support-info.cmd` | data for a support request |
 | `tools\verify.cmd` | read-only check of every query the app uses, plus a key-event capture |
+| `tools\lighttest.cmd` | read-only: every lighting device on the machine and which ones are switched on |
 | `tools\powertest.ps1` | A/B the power-gain slider on GPU watts and clocks |
 | `tools\fantest.cmd` | holds the fans at zero for 60 s, then aborts on its own. Run it on a cool, idle machine |
-| `tools\omenprobe.cs` | CLI for raw BIOS calls |
+| `tools\fanwatch.cmd` | writes a fan level every 5 s for 15 minutes and records what the firmware answered. For fans that stop responding during a game |
+| `tools\modetest.cmd` | sends every known mode byte and watches the fans, for laptops where the modes do nothing |
+| `tools\omenprobe.exe` | CLI for raw BIOS calls |
 
 ## Layout
 

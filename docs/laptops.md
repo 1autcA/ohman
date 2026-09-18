@@ -14,48 +14,33 @@ answers for them. If it answers with nothing usable, Ohman stays read-only and s
 A model becomes **verified** once somebody has run the checklist below on that exact board and every control
 did what it says. Its settings are then fixed rather than worked out at run time.
 
-## Verified
+## The boards
 
-| Model | Board | Verified on | Notes |
-|---|---|---|---|
-| OMEN Transcend 14 (2024) | `8C58` | 2026-09-12 | Checklist run on `8C58`: Core Ultra 9 185H + RTX 4070. Modes, fans, power gain, GPU power and four-zone lighting all confirmed against OMEN Gaming Hub 1101.2608. Graphics switching writes correctly but the restart it needs was never taken, so it is unconfirmed. `8E41` was listed here as the same machine. It is not: an owner reported a 2025 14-fb1xxx with a Core Ultra 9 285H and an RTX 5070, same firmware generation but different silicon. It is driven by the generic path and its own firmware answers; see [#2](https://github.com/P4R1H/ohman/issues/2). |
-| OMEN 15 / 17 (2019–2021) | `8748` | 2026-09-13 | Owner ran it on their own machine and confirmed the controls work. Driven with the mode bytes for its firmware generation, which is what `hp-wmi` does for this board too. |
-| OMEN 15z-en100 (2021) | `88D2` | 2026-09-13 | Owner confirmed it works. Listed in `hp-wmi`, driven with the mode bytes for its firmware generation. |
-| OMEN 16-wf0xxx (2023) | `8BAB` | 2026-09-14 | Full checklist run by an owner: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the keyboard all confirmed, and the fans returned to normal after exiting. A second owner on a 16-wf0120TX (i5-13500HX + RTX 4050, BIOS F.29) confirmed fans and lighting independently, with OMEN Gaming Hub and Light Studio both uninstalled. |
-| OMEN 17-db1xxx | `8E10` | 2026-09-16 | Ryzen AI 7 350, BIOS F.20. Owner ran the checklist: modes, max fan, manual, curve, auto, power gain, GPU power, graphics switching and the fans returning after exit. The keyboard is white only, so the colour rows have nothing to change. |
-| Victus 16-r0xxx | `8BBE` | 2026-09-16 | Core i5-13500H, BIOS F.31. Owner filed a report with nothing wrong on it. |
-| OMEN 16-k0006nl | `8A4C` | 2026-09-16 | Owner confirmed the controls work. |
-| OMEN Transcend 16-u0xxx | `8BB3` | 2026-09-16 | Owner filed a report with nothing wrong on it. |
-| OMEN 16.1 inch (16-xf0xxx) | `8BCA` | 2026-09-18 | Ryzen 7 7840HS + RTX 4060, BIOS F.31. Owner filed a report with nothing wrong on it. A second owner reported the same board with an RTX 4070. |
-| Victus 16 S / R | `8BD5` | 2026-09-18 | Owner confirmed it works, on Discord. |
-| OMEN 16-xd0xxx | `8BCD` | 2026-09-15 | Ryzen 7 7840HS + Radeon 780M, BIOS F.31. Owner ran the checklist: modes, max fan, manual, curve, power gain, GPU power, graphics switching, the four-zone keyboard and all four effects, and the fans returned to normal after exiting. |
-| OMEN 17-ck2013nl | `8BAD` | 2026-09-15 | Owner confirmed modes, max fan, manual, curve, auto, GPU power and that the fans return after exiting. The keyboard lighting does not work on this machine and is still open. A timed thermal profile board in `hp-wmi`, so the fans respond to a mode change even where the power limits may not. |
-| OMEN 15 / 17 | `8787` | 2026-09-15 | Owner confirmed the controls work. |
-| Victus 16-d1xxx | `8A26` | 2026-09-14 | Core i7-12700H + RTX 3050, BIOS F.22. Owner ran it as a full OMEN Gaming Hub replacement and confirmed fan control, the custom curve and the modes all work with OGH uninstalled. Reports thermal policy v0, so Eco and Balanced send the same byte and only Performance differs. |
-| Victus 16-e0xxx | `88EE` | 2026-09-13 | Owner confirmed it works. Not in `hp-wmi`; driven from the firmware's own answers. |
-| Victus 15-fa2405TX | `8DCF` | 2026-09-13 | Owner confirmed modes, fans and the keyboard backlight all work, with no HP software installed. Driven from the firmware's own answers. |
-| HyperX OMEN 15-gb0xxx (2026) | `8EEC` | 2026-09-13 | Ryzen 5 240 + RTX 5050, BIOS F.15. Max fan, manual, curve, auto, power gain, GPU power, graphics and four-zone lighting all confirmed by the owner. Reports **thermal policy v0**, so Eco and Balanced send the same byte and only Performance differs — see below. Base TDP 45 W, OMEN key 29/8613. |
+One table per firmware generation, because the generation is what decides the mode bytes. Marketing names
+are approximate: HP reuses a board across several SKUs, so the board id is the only thing that identifies a
+machine exactly.
 
-See [Verifying your laptop](#verifying-your-laptop).
+**A ✓ marks a board an owner has confirmed.** Everything else still runs — Ohman reads the firmware's own
+system-design data and drives the board with the bytes for its generation — it has simply not been confirmed
+by a person yet. See [Verifying your laptop](#verifying-your-laptop), it takes five minutes.
 
-## Supported
-
-Board ids come from the Linux `hp-wmi` driver's tables plus HP's own service documentation. Grouping is by
-firmware generation, which is what decides the bytes; marketing names are approximate because HP
-reuses a board across several SKUs.
+`8C58` is the reference machine: Core Ultra 9 185H + RTX 4070, checked byte for byte against OMEN Gaming Hub
+1101.2608, which is where the mode bytes, the fan curve and the GPU payloads in `src/Platform.cs` come from.
 
 ### OMEN Transcend
 
 | Model | Board ids |
 |---|---|
-| OMEN Transcend 16 (2023–2025) | `8C3B`, `8C4D` |
+| OMEN Transcend 14 (2024) | `8C58` ✓ |
+| OMEN Transcend 14 (2025) | `8E41` |
+| OMEN Transcend 16 (2023–2025) | `8BB3` ✓, `8C3B`, `8C4D` |
 
 ### OMEN 16 and OMEN MAX
 
 | Model | Board ids |
 |---|---|
-| OMEN 16 (2021–2022) | `8A42`, `8A43` |
-| OMEN 16 (2023–2025) | `8BAA`, `8C76`, `8C77`, `8C78`, `8D24`, `8D26`, `8D2F`, `8E35` |
+| OMEN 16 (2021–2022) | `8A42`, `8A43`, `8A4C` ✓ |
+| OMEN 16 (2023–2025) | `8BAA`, `8BAB` ✓, `8BCA` ✓, `8BCD` ✓, `8C76`, `8C77`, `8C78`, `8D24`, `8D26`, `8D2F`, `8E35` |
 | OMEN MAX 16 (2025) | `8D41`, `8D87` |
 
 ### OMEN 15 and OMEN 17
@@ -65,8 +50,10 @@ reuses a board across several SKUs.
 | OMEN 15 (2019, 15-dc / 15-dh) | `8574`, `8600` |
 | OMEN 17 (2019, 17-cb0) | `8603` |
 | OMEN 15 (2020) | `8A15` |
-| OMEN 15 / 17 (2021) | `8BAD` |
-| OMEN 15 / 17, 2018–2021 generations | `84DA`, `84DB`, `84DC`, `8572`, `8573`, `8575`, `8601`, `8602`, `8604`, `8605`, `8606`, `8607`, `860A`, `8746`, `8747`, `8748`, `8749`, `874A`, `8786`, `8787`, `8788`, `878A`, `878B`, `878C`, `87B5`, `886B`, `886C`, `88C8`, `88CB`, `88D1`, `88D2`, `88F4`, `88F5`, `88F6`, `88F7`, `88FD`, `88FE`, `88FF`, `8900`, `8901`, `8902`, `8912`, `8917`, `8918`, `8949`, `894A`, `89EB` |
+| OMEN 15 / 17 (2021) | `8BAD` ✓ |
+| OMEN 17 (17-db1xxx) | `8E10` ✓ |
+| HyperX OMEN 15-gb0xxx (2026) | `8EEC` ✓ |
+| OMEN 15 / 17, 2018–2021 generations | `84DA`, `84DB`, `84DC`, `8572`, `8573`, `8575`, `8601`, `8602`, `8604`, `8605`, `8606`, `8607`, `860A`, `8746`, `8747`, `8748` ✓, `8749`, `874A`, `8786`, `8787` ✓, `8788`, `878A`, `878B`, `878C`, `87B5`, `886B`, `886C`, `88C8`, `88CB`, `88D1`, `88D2` ✓, `88F4`, `88F5`, `88F6`, `88F7`, `88FD`, `88FE`, `88FF`, `8900`, `8901`, `8902`, `8912`, `8917`, `8918`, `8949`, `894A`, `89EB` |
 
 ### Victus
 
@@ -78,8 +65,8 @@ are written down:
 |---|---|---|
 | Victus 16 (2021–2023) | `88F8`, `8A25` | from `hp-wmi` |
 | Victus 15-fb0xxx | `8A3D` | from `hp-wmi`, no quiet mode |
-| Victus 16 S / R (2023–2024) | `8B2F`, `8BD4`, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
-| Victus 15, other models | `88D9`, `88DA`, `8A3E`, `8C2F`, `8C30`, `8C3F`, `8D07`, `8DCD`, `8E5E` | from the firmware |
+| Victus 16 S / R (2023–2024) | `8B2F`, `8BBE` ✓, `8BD4`, `8BD5` ✓, `8C99`, `8C9C` | from `hp-wmi`, no quiet mode |
+| Victus 15 and 16, other models | `88D9`, `88DA`, `88EE` ✓, `8A26` ✓, `8A3E`, `8C2F`, `8C30`, `8C3F`, `8D07`, `8DCD`, `8DCF` ✓, `8E5E` | from the firmware |
 
 "from the firmware" is the same path every unlisted OMEN takes: Ohman asks the board which firmware generation
 it is and drives it with that generation's bytes. It works, and nobody has yet confirmed on a Victus 15 that

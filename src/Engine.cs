@@ -1333,7 +1333,8 @@ namespace Ohman {
             // Max when: no level is set; the fans are not answering; this board cannot take a level at all
             // (turning max off and then failing to write one is less cooling than before the guard fired); or
             // the owner is already on Max, which the guard must never undercut.
-            if (GuardLevel <= 0 || guardStalled || !CanSetFanLevels || S.Fan == FanMode.Max) { MaxFan(true, "Guard max fan"); return; }
+            // FansByBios: on battery in Auto the firmware owns the levels and drops ours, so only max reaches the fans.
+            if (GuardLevel <= 0 || guardStalled || !CanSetFanLevels || FansByBios || S.Fan == FanMode.Max) { MaxFan(true, "Guard max fan"); return; }
             // Never below what the fans are already doing: a guard that slows them at the hottest moment is not one.
             int level = Math.Max(GuardLevel, Math.Max(curLevel1, curLevel2));
             MaxFan(false, "Guard level");

@@ -645,7 +645,7 @@ namespace Ohman {
             learnTimer.Tick += delegate { learnTimer.Stop(); E.Learning = false; UpdateKeyStatus(); };
             btnLearn.MouseLeftButtonUp += delegate { E.Learning = true; keyDot.Fill = Ui.Brush(Ui.Warn); txtKeyInfo.Text = "press the OMEN key now… (10 s)"; learnTimer.Stop(); learnTimer.Start(); };
 
-            OnSwitch(tgHotkeys, delegate(bool on) { Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });
+            OnSwitch(tgHotkeys, delegate(bool on) { StopListening(); Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });   // a capture in progress ends first, or its bindings would be registered under it
             btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
             btnHotkeys.Content = PencilGlyph(false);
             PreviewKeyUp += delegate { ShowHeldModifiers(); };

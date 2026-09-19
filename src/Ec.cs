@@ -387,7 +387,10 @@ namespace Ohman {
                 }
             }
             if (r.Rpm1 < 0 || r.Rpm1 > 9000 || r.Rpm2 < 0 || r.Rpm2 > 9000) { why = "fan speeds of " + r.Rpm1 + " and " + r.Rpm2 + " are not rpm"; return false; }
-            bool mailboxKnown = mailboxRpm != null && mailboxRpm.Length > 1 && mailboxRpm[0] > 0;
+            // A firmware reading of zero is a reading when the temperature register is absent and the tachometers
+            // are the only proof left: fans that are off agree at zero, and a board started cold would otherwise
+            // never verify, since this runs once at open.
+            bool mailboxKnown = mailboxRpm != null && mailboxRpm.Length > 1 && (mailboxRpm[0] > 0 || (tempAbsent && mailboxRpm[0] == 0));
             if (mailboxKnown) {
                 int want = mailboxRpm[0] * 100, slack = Math.Max(500, want / 4);
                 if (Math.Abs(r.Rpm1 - want) > slack) { why = "it reads " + r.Rpm1 + " rpm where the firmware reads " + want; return false; }

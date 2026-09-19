@@ -133,12 +133,13 @@ namespace Ohman {
         readonly bool[] hotkeyBusy = new bool[HotkeyTable.Count];   // Windows refused this one: another program has it
         string hotkeySubFor = "?";
         TextBlock listeningCap;                                 // the "Press keys" cap while listening, so held modifiers can show in it
-        // thermal guard
-        Button btnGuard;
-        StackPanel guardPanel;
-        bool guardOpen;
-        Gauge gCpu, gChassis, gFans, gHold;
-        TextBlock rCpu, rChassis, rFans, rHold;
+        // thermal guard: the rule as a sentence with the numbers in it
+        WrapPanel guardLine;
+        NumChip chipCpu, chipChassis;
+        PickChip chipFans;
+        Dial dialHold;
+        TextBlock txtHold;
+        int[] guardLevels = new int[0];                         // what each entry of the fans dropdown means, 0 = max
         DispatcherTimer guardDebounce;
         int lastChassis = -1;
         TextBlock txtGuardSub, txtMaxCoolSub, txtKeyCmdHint;
@@ -383,8 +384,7 @@ namespace Ohman {
             btnHotkeys = F<Button>("BtnHotkeys");
             txtHotkeysSub = F<TextBlock>("TxtHotkeysSub");
             hotkeyPanel = F<StackPanel>("HotkeyPanel");
-            btnGuard = F<Button>("BtnGuard");
-            guardPanel = F<StackPanel>("GuardPanel");
+            guardLine = F<WrapPanel>("GuardLine");
             tgEcoBattery = F<ToggleButton>("TgEcoBattery");
             tgLowHzBattery = F<ToggleButton>("TgLowHzBattery");
             tgSyncPower = F<ToggleButton>("TgSyncPower");
@@ -646,12 +646,11 @@ namespace Ohman {
             btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
             btnHotkeys.Content = HotkeyGlyph(false);
             PreviewKeyUp += delegate { ShowHeldModifiers(); };
-            btnGuard.Content = HotkeyGlyph(false);
-            btnGuard.Click += delegate { ToggleGuardPanel(); };
+            BuildGuardLine();
             guardDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             guardDebounce.Tick += delegate {
                 guardDebounce.Stop();
-                int cpu = (int)gCpu.Value, ch = (int)gChassis.Value, lvl = gFans.Value > E.P.Curve.Ceiling ? 0 : (int)gFans.Value, hold = (int)gHold.Value;
+                int cpu = chipCpu.Value, ch = chipChassis.Value, lvl = guardLevels[chipFans.Index], hold = dialHold.Value;
                 Bg(delegate { E.SetGuardLimits(cpu, ch, lvl, hold); });
             };
             PreviewKeyDown += OnHotkeyCapture;
@@ -791,7 +790,7 @@ namespace Ohman {
         /// has to change GuardLimits and the words follow.</summary>
         void GuardText() {
             var g = E.P.Guard;
-            txtGuardSub.Text = "Forces " + (E.GuardLevel > 0 ? E.Rpm(E.GuardLevel) : "max fan") + " above " + E.GuardCpuHot + "° CPU or " + E.GuardChassisHot + "° chassis, lets go " + HoldText(E.GuardHoldSeconds) + " after it cools";
+            SyncGuardLine();
             txtMaxCoolSub.Text = "Below " + g.MaxFanCoolBelow + "° for " + (g.MaxFanCoolSeconds / 60) + " minutes";
             txtGuardNote.Text = Program.DisplayName + " forces max fan above " + g.CpuHot + "° CPU";
         }
@@ -1957,7 +1956,7 @@ namespace Ohman {
         void OnSensors(SensorSnapshot s) {
             E.CpuTemp = s.CpuTemp;
             E.CpuTempNow = s.CpuTempNow;
-            if (guardOpen) { gCpu.Live = s.CpuTemp; gCpu.Repaint(); }
+            if (!double.IsNaN(s.CpuTemp)) chipCpu.ToolTip = "CPU is " + s.CpuTemp.ToString("0") + "\u00b0 right now. Scroll or drag to change the limit.";
             E.GpuTemp = s.GpuTemp;
             onBattery = s.OnBattery;
             UpdateTrayTemp(s.CpuTemp);
@@ -2007,7 +2006,7 @@ namespace Ohman {
                 Dispatcher.BeginInvoke((Action)delegate {
                     if (f != null) {
                         lastFans = f;
-                        if (t >= 0) { lastChassis = t; if (guardOpen) { gChassis.Live = t; gChassis.Repaint(); } }
+                        if (t >= 0) { lastChassis = t; chipChassis.ToolTip = "Chassis is " + t + "\u00b0 right now. Scroll or drag to change the limit."; }
                         bigFan1.Text = Level(f[0]);
                         bigFan2.Text = Level(f[1]);
                         UpdateFanStatus();
@@ -2242,59 +2241,53 @@ namespace Ohman {
             listeningCap.Text = t.Substring(0, t.Length - 1) + "\u2026";
         }
 
-        // ---------- the thermal guard's limits ----------
-        static string HoldText(int s) { return s % 60 == 0 && s >= 60 ? (s / 60) + (s == 60 ? " minute" : " minutes") : s + " s"; }
-        void ToggleGuardPanel() {
-            guardOpen = !guardOpen;
-            btnGuard.Content = HotkeyGlyph(guardOpen);
-            btnGuard.ToolTip = guardOpen ? "Done" : "Change the limits. The white dot on each strip is the reading right now.";
-            if (guardOpen) BuildGuardPanel();
-            guardPanel.Visibility = guardOpen ? Visibility.Visible : Visibility.Collapsed;
-            Remeasure(cur);
-        }
-        /// <summary>Four strips: the two temperatures the guard watches, with the live reading on each so the
-        /// margin is visible; the fan level it forces, with Max at the top end; and how long it holds on after
-        /// the machine has cooled. Built once per opening; the gauges then update in place.</summary>
-        void BuildGuardPanel() {
-            guardPanel.Children.Clear();
-            var g = new Grid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        // ---------- the thermal guard's rule, as a sentence ----------
+        static string HoldText(int s) { return s % 60 == 0 && s >= 60 ? (s / 60) + " min" : s + " s"; }
+        static TextBlock Word(string t) { return new TextBlock { Text = t, FontFamily = Ui.UiFont, FontSize = 12, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center }; }
+        /// <summary>"When CPU [95°] or chassis [62°], turn fans [Max] for (dial) 1 min". The words are the sub-line's
+        /// and the numbers are the controls, so there is nothing to open and the rule reads as the rule.</summary>
+        void BuildGuardLine() {
+            guardLine.Children.Clear();
             int tj = 100;
             try { if (E.Cpu != null) { int t = E.Cpu.Poll().TjMax; if (t > 0) tj = t; } } catch { }
-            int ceiling = E.P.Curve.Ceiling, floor = E.P.Curve.Floor;
-            // Wide enough that an idle machine's reading sits inside the strip, so the gap to the limit is visible.
-            gCpu = new Gauge { Min = 50, Max = Math.Max(90, tj - 5), Value = E.GuardCpuHot, Live = E.CpuTemp };
-            gChassis = new Gauge { Min = 30, Max = 75, Value = E.GuardChassisHot, Live = lastChassis >= 0 ? lastChassis : double.NaN };
-            gFans = new Gauge { Min = floor, Max = ceiling + 1, Value = E.GuardLevel > 0 ? E.GuardLevel : ceiling + 1, Stops = new[] { Ui.Col("#2C2825"), Ui.BalColor } };
-            gHold = new Gauge { Min = 30, Max = 300, Step = 30, Value = E.GuardHoldSeconds, Stops = new[] { Ui.Col("#2C2825"), Ui.Col("#96918D") } };
-            Gauge[] gauges = { gCpu, gChassis, gFans, gHold };
-            string[] labels = { "CPU", "Chassis", "Fans", "Hold" };
-            var reads = new TextBlock[4];
-            for (int i = 0; i < 4; i++) {
-                int idx = i;
-                g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28) });
-                var name = new TextBlock { Text = labels[i], FontFamily = Ui.UiFont, FontSize = 13, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetRow(name, i);
-                Grid.SetRow(gauges[i], i); Grid.SetColumn(gauges[i], 1);
-                gauges[i].Margin = new Thickness(0, 0, 8, 0);
-                reads[i] = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 12, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-                Grid.SetRow(reads[i], i); Grid.SetColumn(reads[i], 2);
-                gauges[i].Changed += delegate { GuardReadout(idx); guardDebounce.Stop(); guardDebounce.Start(); };
-                g.Children.Add(name); g.Children.Add(gauges[i]); g.Children.Add(reads[i]);
-            }
-            rCpu = reads[0]; rChassis = reads[1]; rFans = reads[2]; rHold = reads[3];
-            for (int i = 0; i < 4; i++) GuardReadout(i);
-            guardPanel.Children.Add(g);
+            chipCpu = new NumChip { Min = 70, Max = Math.Max(90, tj - 5), Suffix = "\u00b0", ToolTip = "Scroll or drag to change the limit" };
+            chipChassis = new NumChip { Min = 40, Max = 75, Suffix = "\u00b0", ToolTip = "Scroll or drag to change the limit" };
+            // Max, then a ladder of levels down to half of the ceiling, in the unit this board shows fans in.
+            int ceiling = E.P.Curve.Ceiling;
+            var levels = new System.Collections.Generic.List<int> { 0 };
+            var names = new System.Collections.Generic.List<string> { "Max" };
+            for (int pct = 90; pct >= 50; pct -= 10) { int lvl = (int)Math.Round(ceiling * pct / 100.0); levels.Add(lvl); names.Add(E.Rpm(lvl)); }
+            guardLevels = levels.ToArray();
+            chipFans = new PickChip { Items = names.ToArray(), ToolTip = "What the fans go to. A stalled fan always gets Max." };
+            dialHold = new Dial { ToolTip = "How long it holds on after both readings are back under. Scroll or drag." };
+            txtHold = Word("");
+            txtHold.Foreground = Ui.TextHi; txtHold.FontFamily = Ui.MonoFont; txtHold.FontSize = 11;
+            Action changed = delegate { if (syncing) return; txtHold.Text = HoldText(dialHold.Value); guardDebounce.Stop(); guardDebounce.Start(); };
+            chipCpu.Changed += delegate { changed(); };
+            chipChassis.Changed += delegate { changed(); };
+            chipFans.Changed += delegate { changed(); };
+            dialHold.Changed += delegate { changed(); };
+            guardLine.Children.Add(Word("When CPU"));
+            guardLine.Children.Add(chipCpu);
+            guardLine.Children.Add(Word("or chassis"));
+            guardLine.Children.Add(chipChassis);
+            guardLine.Children.Add(Word("turn fans"));
+            guardLine.Children.Add(chipFans);
+            guardLine.Children.Add(Word("for"));
+            guardLine.Children.Add(dialHold);
+            guardLine.Children.Add(txtHold);
         }
-        void GuardReadout(int i) {
-            switch (i) {
-                case 0: rCpu.Text = (int)gCpu.Value + "\u00b0"; break;
-                case 1: rChassis.Text = (int)gChassis.Value + "\u00b0"; break;
-                case 2: rFans.Text = gFans.Value > E.P.Curve.Ceiling ? "Max" : E.Rpm((int)gFans.Value); break;
-                case 3: rHold.Text = HoldText((int)gHold.Value); break;
-            }
+        /// <summary>The controls from the settings, inside Synced so their Changed does not write them back.</summary>
+        void SyncGuardLine() {
+            Synced(delegate {
+            chipCpu.Value = E.GuardCpuHot;
+            chipChassis.Value = E.GuardChassisHot;
+            int at = 0;
+            for (int i = 0; i < guardLevels.Length; i++) if (guardLevels[i] == E.GuardLevel) at = i;
+            chipFans.Index = at;
+            dialHold.Value = E.GuardHoldSeconds;
+            txtHold.Text = HoldText(dialHold.Value);
+            });
         }
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) {
             if (msg == WM_HOTKEY) {
@@ -2317,7 +2310,7 @@ namespace Ohman {
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
             else if (page == "hotkeys") { Navigate(Page.Settings, false); ToggleHotkeyPanel(); }   // settings, hotkey panel open (screenshot aid)
-            else if (page == "guard") { Navigate(Page.Settings, false); ToggleGuardPanel(); }
+            else if (page == "guard") Navigate(Page.Settings, false);
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);
@@ -2334,7 +2327,7 @@ namespace Ohman {
                     root.UpdateLayout();
                     // --page update / driver: the eased scroll never ran (no frames rendered off-screen), so put
                     // the row in view now that the page has its final layout.
-                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : Program.StartPage == "guard" ? (FrameworkElement)guardPanel : null;
+                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : Program.StartPage == "guard" ? (FrameworkElement)guardLine : null;
                     if (at != null && cur == Page.Settings) {
                         try {
                             var content = scroll.Content as FrameworkElement;

@@ -89,48 +89,99 @@ namespace Ohman {
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { if (IsMouseCaptured) ReleaseMouseCapture(); }
     }
 
-    /// <summary>A limit on a strip of colour, the way the keyboard page picks a hue from one. The strip runs
-    /// cold to hot (or slow to fast), the handle is the limit and drags, and a small white marker is where the
-    /// machine is right now, so the distance between the two is the whole story at a glance.</summary>
-    sealed class Gauge : FrameworkElement {
-        public double Min, Max = 100, Value, Step = 1;
-        public double Live = double.NaN;                // the current reading, or NaN for none
-        public Color[] Stops = { Ui.Ok, Ui.Warn, Ui.Danger };
-        public event Action<double> Changed;
-        public Gauge() { Cursor = Cursors.Hand; }
-        protected override Size MeasureOverride(Size a) { return new Size(double.IsInfinity(a.Width) ? 160 : a.Width, 22); }
-        double X(double v) { return 9 + (Math.Max(Min, Math.Min(Max, v)) - Min) / (Max - Min) * (ActualWidth - 18); }
-        protected override void OnRender(DrawingContext dc) {
-            double w = ActualWidth, cy = ActualHeight / 2;
-            var g = new LinearGradientBrush();
-            for (int i = 0; i < Stops.Length; i++) g.GradientStops.Add(new GradientStop(Stops[i], i / (double)(Stops.Length - 1)));
-            g.Freeze();
-            // The strip is lit only up to the limit; past it is what the guard steps in for, shown dark.
-            double hx = X(Value);
-            dc.DrawRoundedRectangle(Ui.Sunken, null, new Rect(9, cy - 4, w - 18, 8), 4, 4);
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, hx, ActualHeight)));
-            dc.DrawRoundedRectangle(g, null, new Rect(9, cy - 4, w - 18, 8), 4, 4);
-            dc.Pop();
-            if (!double.IsNaN(Live)) {
-                double lx = X(Live);
-                dc.DrawEllipse(Ui.Brush(Color.FromArgb(70, 255, 255, 255)), null, new Point(lx, cy), 7, 7);
-                dc.DrawEllipse(Ui.TextHi, null, new Point(lx, cy), 3, 3);
+    /// <summary>A number in a sentence. Scroll on it or drag it up and down to change it; the tooltip says what
+    /// the reading is right now, so the margin is one hover away. Looks like a key cap, because it is one.</summary>
+    sealed class NumChip : Border {
+        public int Min, Max = 100, Step = 1;
+        public string Suffix = "";
+        public event Action<int> Changed;
+        int value;
+        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi };
+        Point down; int downValue; bool dragging;
+        public NumChip() {
+            Background = Ui.Pill; BorderBrush = Ui.Line; BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
+            Padding = new Thickness(6, 1, 6, 1); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.SizeNS; Child = text;
+            VerticalAlignment = VerticalAlignment.Center;
+        }
+        public int Value { get { return value; } set { value = Math.Max(Min, Math.Min(Max, value)); text.Text = value + Suffix; } }
+        void Set(int v, bool fire) { int was = value; Value = v; if (fire && value != was) { var h = Changed; if (h != null) h(value); } }
+        protected override void OnMouseWheel(MouseWheelEventArgs e) { Set(value + (e.Delta > 0 ? Step : -Step), true); e.Handled = true; }
+        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { down = e.GetPosition(this); downValue = value; dragging = true; CaptureMouse(); }
+        protected override void OnMouseMove(MouseEventArgs e) {
+            if (!dragging) return;
+            double dy = down.Y - e.GetPosition(this).Y;                  // up is more
+            Set(downValue + (int)Math.Round(dy / 6) * Step, true);
+        }
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { dragging = false; if (IsMouseCaptured) ReleaseMouseCapture(); }
+    }
+
+    /// <summary>A choice in a sentence: the current one as a cap with a small arrow, and a list under it on click.
+    /// Scrolling on it steps through the list without opening it.</summary>
+    sealed class PickChip : Border {
+        public string[] Items = new string[0];
+        public event Action<int> Changed;
+        int index;
+        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi };
+        readonly System.Windows.Controls.Primitives.Popup popup = new System.Windows.Controls.Primitives.Popup { StaysOpen = false, AllowsTransparency = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 4 };
+        public PickChip() {
+            Background = Ui.Pill; BorderBrush = Ui.Line; BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
+            Padding = new Thickness(6, 1, 4, 1); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.Hand;
+            VerticalAlignment = VerticalAlignment.Center;
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(text);
+            row.Children.Add(new TextBlock { Text = "\u25BE", FontSize = 9, Foreground = Ui.Sub, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            Child = row;
+            popup.PlacementTarget = this;
+        }
+        public int Index { get { return index; } set { index = Math.Max(0, Math.Min(Items.Length - 1, value)); text.Text = Items.Length > 0 ? Items[index] : ""; } }
+        void Set(int i, bool fire) { int was = index; Index = i; if (fire && index != was) { var h = Changed; if (h != null) h(index); } }
+        protected override void OnMouseWheel(MouseWheelEventArgs e) { Set(index + (e.Delta > 0 ? -1 : 1), true); e.Handled = true; }
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) {
+            var list = new StackPanel();
+            for (int i = 0; i < Items.Length; i++) {
+                int idx = i;
+                var item = new Border { Background = i == index ? Ui.Pill : Brushes.Transparent, Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand,
+                    Child = new TextBlock { Text = Items[i], FontFamily = Ui.MonoFont, FontSize = 11, Foreground = i == index ? Ui.TextHi : Ui.TextB } };
+                item.MouseEnter += delegate { item.Background = Ui.Pill; };
+                item.MouseLeave += delegate { item.Background = idx == index ? Ui.Pill : Brushes.Transparent; };
+                item.MouseLeftButtonUp += delegate { popup.IsOpen = false; Set(idx, true); };
+                list.Children.Add(item);
             }
-            dc.DrawEllipse(Ui.Card, new Pen(Ui.Brush(Ui.BalColor), 2.5), new Point(hx, cy), 7, 7);
+            popup.Child = new Border { Background = Ui.Card, BorderBrush = Ui.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Padding = new Thickness(4), Child = list,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 4, Opacity = 0.5 } };
+            popup.IsOpen = true;
         }
-        void Pick(Point p) {
-            double t = Math.Max(0, Math.Min(1, (p.X - 9) / Math.Max(1, ActualWidth - 18)));
-            double v = Math.Round((Min + t * (Max - Min)) / Step) * Step;
-            if (v == Value) return;
-            Value = v;
-            InvalidateVisual();
-            var h = Changed;
-            if (h != null) h(v);
+    }
+
+    /// <summary>A duration as a dial: a ring, filled clockwise from the top by how much of the range is set.
+    /// Drag up or down, or scroll, to turn it. The number sits beside it in the sentence.</summary>
+    sealed class Dial : FrameworkElement {
+        public int Min = 30, Max = 300, Step = 30;
+        public event Action<int> Changed;
+        int value = 60;
+        Point down; int downValue; bool dragging;
+        public Dial() { Cursor = Cursors.SizeNS; Margin = new Thickness(4, 0, 4, 0); VerticalAlignment = VerticalAlignment.Center; }
+        public int Value { get { return value; } set { value = Math.Max(Min, Math.Min(Max, value)); InvalidateVisual(); } }
+        void Set(int v, bool fire) { int was = value; Value = v; if (fire && value != was) { var h = Changed; if (h != null) h(value); } }
+        protected override Size MeasureOverride(Size a) { return new Size(18, 18); }
+        protected override void OnRender(DrawingContext dc) {
+            var c = new Point(9, 9);
+            dc.DrawEllipse(Brushes.Transparent, new Pen(Ui.Line, 3), c, 6.5, 6.5);
+            double t = (value - Min) / (double)Math.Max(1, Max - Min);
+            if (t <= 0) return;
+            double a = t * 2 * Math.PI - Math.PI / 2;
+            var start = new Point(9, 2.5);
+            var end = new Point(9 + 6.5 * Math.Cos(a), 9 + 6.5 * Math.Sin(a));
+            var f = new PathFigure { StartPoint = start };
+            f.Segments.Add(new ArcSegment(t >= 1 ? new Point(8.99, 2.5) : end, new Size(6.5, 6.5), 0, t > 0.5, SweepDirection.Clockwise, true));
+            var geo = new PathGeometry(); geo.Figures.Add(f);
+            dc.DrawGeometry(null, new Pen(Ui.Brush(Ui.BalColor), 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geo);
         }
-        public void Repaint() { InvalidateVisual(); }
-        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { CaptureMouse(); Pick(e.GetPosition(this)); }
-        protected override void OnMouseMove(MouseEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed && IsMouseCaptured) Pick(e.GetPosition(this)); }
-        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { if (IsMouseCaptured) ReleaseMouseCapture(); }
+        protected override void OnMouseWheel(MouseWheelEventArgs e) { Set(value + (e.Delta > 0 ? Step : -Step), true); e.Handled = true; }
+        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { down = e.GetPosition(this); downValue = value; dragging = true; CaptureMouse(); }
+        protected override void OnMouseMove(MouseEventArgs e) { if (dragging) Set(downValue + (int)Math.Round((down.Y - e.GetPosition(this).Y) / 8) * Step, true); }
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { dragging = false; if (IsMouseCaptured) ReleaseMouseCapture(); }
+        protected override HitTestResult HitTestCore(PointHitTestParameters p) { return new PointHitTestResult(this, p.HitPoint); }
     }
 
     /// <summary>A filled segment: labels in a sunken box, the accent pill slides to the selected one.</summary>

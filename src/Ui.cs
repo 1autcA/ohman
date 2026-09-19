@@ -125,7 +125,8 @@ namespace Ohman {
         Ellipse keyDot;
         ToggleButton tgSuppress, tgHotkeys, tgAutostart, tgEcoBattery, tgSyncPower, tgLowHzBattery, tgTrayTemp, tgGuard, tgUpdateAuto;
         // hotkeys
-        TextBlock btnHotkeys, txtHotkeysSub;
+        Button btnHotkeys;
+        TextBlock txtHotkeysSub;
         StackPanel hotkeyPanel;
         bool hotkeysOpen;
         int listening = -1;                                     // the action waiting for a key press, or -1
@@ -370,7 +371,7 @@ namespace Ohman {
             txtGpuSub = F<TextBlock>("TxtGpuSub");
             tgSuppress = F<ToggleButton>("TgSuppress");
             tgHotkeys = F<ToggleButton>("TgHotkeys");
-            btnHotkeys = F<TextBlock>("BtnHotkeys");
+            btnHotkeys = F<Button>("BtnHotkeys");
             txtHotkeysSub = F<TextBlock>("TxtHotkeysSub");
             hotkeyPanel = F<StackPanel>("HotkeyPanel");
             tgEcoBattery = F<ToggleButton>("TgEcoBattery");
@@ -631,7 +632,7 @@ namespace Ohman {
             btnLearn.MouseLeftButtonUp += delegate { E.Learning = true; keyDot.Fill = Ui.Brush(Ui.Warn); txtKeyInfo.Text = "press the OMEN key now… (10 s)"; learnTimer.Stop(); learnTimer.Start(); };
 
             OnSwitch(tgHotkeys, delegate(bool on) { Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });
-            btnHotkeys.MouseLeftButtonUp += delegate { ToggleHotkeyPanel(); };
+            btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
             PreviewKeyDown += OnHotkeyCapture;
             OnSwitch(tgEcoBattery, delegate(bool on) { Bg(delegate { E.SetEcoOnBattery(on); }); });
             OnSwitch(tgSyncPower, delegate(bool on) { Bg(delegate { E.SetSyncWinPower(on); }); });
@@ -2093,7 +2094,9 @@ namespace Ohman {
         void ToggleHotkeyPanel() {
             hotkeysOpen = !hotkeysOpen;
             if (!hotkeysOpen) StopListening();
-            btnHotkeys.Text = hotkeysOpen ? "Done" : "Customise";
+            // A pencil to open, a tick to close: the same spot, one glyph, no words to wrap the sub-line around.
+            btnHotkeys.Content = hotkeysOpen ? "" : "";
+            btnHotkeys.ToolTip = hotkeysOpen ? "Done" : "Change the shortcuts";
             if (hotkeysOpen) BuildHotkeyPanel();
             hotkeyPanel.Visibility = hotkeysOpen ? Visibility.Visible : Visibility.Collapsed;
             Remeasure(cur);

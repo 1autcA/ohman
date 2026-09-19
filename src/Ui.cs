@@ -135,6 +135,8 @@ namespace Ohman {
         TextBlock listeningCap;                                 // the "Press keys" cap while listening, so held modifiers can show in it
         // thermal guard: the rule as a sentence with the numbers in it
         WrapPanel guardLine;
+        Button btnGuard;
+        bool guardOpen;
         NumChip chipCpu, chipChassis;
         PickChip chipFans;
         Dial dialHold;
@@ -385,6 +387,7 @@ namespace Ohman {
             txtHotkeysSub = F<TextBlock>("TxtHotkeysSub");
             hotkeyPanel = F<StackPanel>("HotkeyPanel");
             guardLine = F<WrapPanel>("GuardLine");
+            btnGuard = F<Button>("BtnGuard");
             tgEcoBattery = F<ToggleButton>("TgEcoBattery");
             tgLowHzBattery = F<ToggleButton>("TgLowHzBattery");
             tgSyncPower = F<ToggleButton>("TgSyncPower");
@@ -647,6 +650,17 @@ namespace Ohman {
             btnHotkeys.Content = HotkeyGlyph(false);
             PreviewKeyUp += delegate { ShowHeldModifiers(); };
             BuildGuardLine();
+            btnGuard.Content = HotkeyGlyph(false);
+            // Plain sentence until the pencil: the chips take the wheel, and a page that scrolls under the pointer
+            // must not change a limit on the way past.
+            btnGuard.Click += delegate {
+                guardOpen = !guardOpen;
+                btnGuard.Content = HotkeyGlyph(guardOpen);
+                btnGuard.ToolTip = guardOpen ? "Done" : "Change the rule";
+                txtGuardSub.Visibility = guardOpen ? Visibility.Collapsed : Visibility.Visible;
+                guardLine.Visibility = guardOpen ? Visibility.Visible : Visibility.Collapsed;
+                Remeasure(cur);
+            };
             guardDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             guardDebounce.Tick += delegate {
                 guardDebounce.Stop();
@@ -791,6 +805,7 @@ namespace Ohman {
         void GuardText() {
             var g = E.P.Guard;
             SyncGuardLine();
+            txtGuardSub.Text = "When CPU " + E.GuardCpuHot + "° or chassis " + E.GuardChassisHot + "° turn fans " + (E.GuardLevel > 0 ? E.Rpm(E.GuardLevel) : "max") + " for " + HoldText(E.GuardHoldSeconds);
             txtMaxCoolSub.Text = "Below " + g.MaxFanCoolBelow + "° for " + (g.MaxFanCoolSeconds / 60) + " minutes";
             txtGuardNote.Text = Program.DisplayName + " forces max fan above " + g.CpuHot + "° CPU";
         }
@@ -2310,7 +2325,7 @@ namespace Ohman {
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
             else if (page == "hotkeys") { Navigate(Page.Settings, false); ToggleHotkeyPanel(); }   // settings, hotkey panel open (screenshot aid)
-            else if (page == "guard") Navigate(Page.Settings, false);
+            else if (page == "guard") { Navigate(Page.Settings, false); btnGuard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);

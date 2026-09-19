@@ -96,12 +96,19 @@ namespace Ohman {
         public string Suffix = "";
         public event Action<int> Changed;
         int value;
-        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi };
+        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi, VerticalAlignment = VerticalAlignment.Center };
         Point down; int downValue; bool dragging;
         public NumChip() {
             Background = Ui.Pill; BorderBrush = Ui.Line; BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
-            Padding = new Thickness(6, 1, 6, 1); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.SizeNS; Child = text;
-            VerticalAlignment = VerticalAlignment.Center;
+            Padding = new Thickness(6, 2, 4, 2); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.SizeNS;
+            VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true;
+            // A stacked pair of arrows says "this moves" without a word; the top half of the chip steps up, the bottom down.
+            var arrows = new StackPanel { Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            arrows.Children.Add(new TextBlock { Text = "▴", FontSize = 7, Foreground = Ui.Sub, Margin = new Thickness(0, -1, 0, -2) });
+            arrows.Children.Add(new TextBlock { Text = "▾", FontSize = 7, Foreground = Ui.Sub, Margin = new Thickness(0, -2, 0, -1) });
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(text); row.Children.Add(arrows);
+            Child = row;
         }
         public int Value { get { return value; } set { value = Math.Max(Min, Math.Min(Max, value)); text.Text = value + Suffix; } }
         void Set(int v, bool fire) { int was = value; Value = v; if (fire && value != was) { var h = Changed; if (h != null) h(value); } }
@@ -112,7 +119,11 @@ namespace Ohman {
             double dy = down.Y - e.GetPosition(this).Y;                  // up is more
             Set(downValue + (int)Math.Round(dy / 6) * Step, true);
         }
-        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { dragging = false; if (IsMouseCaptured) ReleaseMouseCapture(); }
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) {
+            bool moved = dragging && Math.Abs(down.Y - e.GetPosition(this).Y) > 3;
+            dragging = false; if (IsMouseCaptured) ReleaseMouseCapture();
+            if (!moved) Set(value + (e.GetPosition(this).Y < ActualHeight / 2 ? Step : -Step), true);   // a click: top half up, bottom half down
+        }
     }
 
     /// <summary>A choice in a sentence: the current one as a cap with a small arrow, and a list under it on click.
@@ -121,12 +132,12 @@ namespace Ohman {
         public string[] Items = new string[0];
         public event Action<int> Changed;
         int index;
-        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi };
+        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi, VerticalAlignment = VerticalAlignment.Center };
         readonly System.Windows.Controls.Primitives.Popup popup = new System.Windows.Controls.Primitives.Popup { StaysOpen = false, AllowsTransparency = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 4 };
         public PickChip() {
             Background = Ui.Pill; BorderBrush = Ui.Line; BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
-            Padding = new Thickness(6, 1, 4, 1); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.Hand;
-            VerticalAlignment = VerticalAlignment.Center;
+            Padding = new Thickness(6, 2, 4, 2); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.Hand;
+            VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true;
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             row.Children.Add(text);
             row.Children.Add(new TextBlock { Text = "\u25BE", FontSize = 9, Foreground = Ui.Sub, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
@@ -151,37 +162,6 @@ namespace Ohman {
                 Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 4, Opacity = 0.5 } };
             popup.IsOpen = true;
         }
-    }
-
-    /// <summary>A duration as a dial: a ring, filled clockwise from the top by how much of the range is set.
-    /// Drag up or down, or scroll, to turn it. The number sits beside it in the sentence.</summary>
-    sealed class Dial : FrameworkElement {
-        public int Min = 30, Max = 300, Step = 30;
-        public event Action<int> Changed;
-        int value = 60;
-        Point down; int downValue; bool dragging;
-        public Dial() { Cursor = Cursors.SizeNS; Margin = new Thickness(4, 0, 4, 0); VerticalAlignment = VerticalAlignment.Center; }
-        public int Value { get { return value; } set { value = Math.Max(Min, Math.Min(Max, value)); InvalidateVisual(); } }
-        void Set(int v, bool fire) { int was = value; Value = v; if (fire && value != was) { var h = Changed; if (h != null) h(value); } }
-        protected override Size MeasureOverride(Size a) { return new Size(18, 18); }
-        protected override void OnRender(DrawingContext dc) {
-            var c = new Point(9, 9);
-            dc.DrawEllipse(Brushes.Transparent, new Pen(Ui.Line, 3), c, 6.5, 6.5);
-            double t = (value - Min) / (double)Math.Max(1, Max - Min);
-            if (t <= 0) return;
-            double a = t * 2 * Math.PI - Math.PI / 2;
-            var start = new Point(9, 2.5);
-            var end = new Point(9 + 6.5 * Math.Cos(a), 9 + 6.5 * Math.Sin(a));
-            var f = new PathFigure { StartPoint = start };
-            f.Segments.Add(new ArcSegment(t >= 1 ? new Point(8.99, 2.5) : end, new Size(6.5, 6.5), 0, t > 0.5, SweepDirection.Clockwise, true));
-            var geo = new PathGeometry(); geo.Figures.Add(f);
-            dc.DrawGeometry(null, new Pen(Ui.Brush(Ui.BalColor), 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, geo);
-        }
-        protected override void OnMouseWheel(MouseWheelEventArgs e) { Set(value + (e.Delta > 0 ? Step : -Step), true); e.Handled = true; }
-        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { down = e.GetPosition(this); downValue = value; dragging = true; CaptureMouse(); }
-        protected override void OnMouseMove(MouseEventArgs e) { if (dragging) Set(downValue + (int)Math.Round((down.Y - e.GetPosition(this).Y) / 8) * Step, true); }
-        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { dragging = false; if (IsMouseCaptured) ReleaseMouseCapture(); }
-        protected override HitTestResult HitTestCore(PointHitTestParameters p) { return new PointHitTestResult(this, p.HitPoint); }
     }
 
     /// <summary>A filled segment: labels in a sunken box, the accent pill slides to the selected one.</summary>

@@ -139,8 +139,8 @@ namespace Ohman {
         bool guardOpen;
         NumChip chipCpu, chipChassis;
         PickChip chipFans;
-        Dial dialHold;
-        TextBlock txtHold;
+        PickChip chipHold;
+        static readonly int[] HoldChoices = { 30, 60, 120, 180, 300 };
         int[] guardLevels = new int[0];                         // what each entry of the fans dropdown means, 0 = max
         DispatcherTimer guardDebounce;
         int lastChassis = -1;
@@ -664,7 +664,7 @@ namespace Ohman {
             guardDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             guardDebounce.Tick += delegate {
                 guardDebounce.Stop();
-                int cpu = chipCpu.Value, ch = chipChassis.Value, lvl = guardLevels[chipFans.Index], hold = dialHold.Value;
+                int cpu = chipCpu.Value, ch = chipChassis.Value, lvl = guardLevels[chipFans.Index], hold = HoldChoices[chipHold.Index];
                 Bg(delegate { E.SetGuardLimits(cpu, ch, lvl, hold); });
             };
             PreviewKeyDown += OnHotkeyCapture;
@@ -2274,14 +2274,14 @@ namespace Ohman {
             for (int pct = 90; pct >= 50; pct -= 10) { int lvl = (int)Math.Round(ceiling * pct / 100.0); levels.Add(lvl); names.Add(E.Rpm(lvl)); }
             guardLevels = levels.ToArray();
             chipFans = new PickChip { Items = names.ToArray(), ToolTip = "What the fans go to. A stalled fan always gets Max." };
-            dialHold = new Dial { ToolTip = "How long it holds on after both readings are back under. Scroll or drag." };
-            txtHold = Word("");
-            txtHold.Foreground = Ui.TextHi; txtHold.FontFamily = Ui.MonoFont; txtHold.FontSize = 11;
-            Action changed = delegate { if (syncing) return; txtHold.Text = HoldText(dialHold.Value); guardDebounce.Stop(); guardDebounce.Start(); };
+            var holds = new string[HoldChoices.Length];
+            for (int i = 0; i < holds.Length; i++) holds[i] = HoldText(HoldChoices[i]);
+            chipHold = new PickChip { Items = holds, ToolTip = "How long it holds on after both readings are back under" };
+            Action changed = delegate { if (syncing) return; guardDebounce.Stop(); guardDebounce.Start(); };
             chipCpu.Changed += delegate { changed(); };
             chipChassis.Changed += delegate { changed(); };
             chipFans.Changed += delegate { changed(); };
-            dialHold.Changed += delegate { changed(); };
+            chipHold.Changed += delegate { changed(); };
             guardLine.Children.Add(Word("When CPU"));
             guardLine.Children.Add(chipCpu);
             guardLine.Children.Add(Word("or chassis"));
@@ -2289,8 +2289,7 @@ namespace Ohman {
             guardLine.Children.Add(Word("turn fans"));
             guardLine.Children.Add(chipFans);
             guardLine.Children.Add(Word("for"));
-            guardLine.Children.Add(dialHold);
-            guardLine.Children.Add(txtHold);
+            guardLine.Children.Add(chipHold);
         }
         /// <summary>The controls from the settings, inside Synced so their Changed does not write them back.</summary>
         void SyncGuardLine() {
@@ -2300,8 +2299,9 @@ namespace Ohman {
             int at = 0;
             for (int i = 0; i < guardLevels.Length; i++) if (guardLevels[i] == E.GuardLevel) at = i;
             chipFans.Index = at;
-            dialHold.Value = E.GuardHoldSeconds;
-            txtHold.Text = HoldText(dialHold.Value);
+            int h = 1;
+            for (int i = 0; i < HoldChoices.Length; i++) if (HoldChoices[i] == E.GuardHoldSeconds) h = i;
+            chipHold.Index = h;
             });
         }
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) {

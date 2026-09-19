@@ -108,7 +108,9 @@ namespace Ohman {
 
         /// <summary>The line under the Hotkeys row, grouped by modifier set: "Ctrl+Alt: E/B/P modes, M max fan ·
         /// Shift+F11 cycles". Four shortcuts that share Ctrl+Alt are one entry that way rather than a line each.</summary>
-        public static string Summary(Hotkey[] b) {
+        /// <param name="omenKey">What the OMEN key (Fn+F12) does, worded for this line, or null. It is set on the row
+        /// above and is not one of the bindings here, but it belongs in the list of keys that do things.</param>
+        public static string Summary(Hotkey[] b, string omenKey) {
             var order = new System.Collections.Generic.List<uint>();
             var items = new System.Collections.Generic.Dictionary<uint, System.Collections.Generic.List<string>>();
             Action<uint, string> add = delegate(uint mods, string text) {
@@ -126,9 +128,11 @@ namespace Ohman {
             }
             if (!b[3].IsEmpty) add(b[3].Mods, Hotkey.KeyName(b[3].Vk) + " max fan");
             if (!b[4].IsEmpty) add(b[4].Mods, Hotkey.KeyName(b[4].Vk) + " cycles");
+            if (omenKey != null) add(uint.MaxValue, omenKey);
             if (order.Count == 0) return "No shortcuts set";
             var parts = new System.Collections.Generic.List<string>();
             foreach (uint mods in order) {
+                if (mods == uint.MaxValue) { parts.Add("Fn+F12 " + items[mods][0]); continue; }
                 string prefix = new Hotkey(mods, 'X').ToString();
                 prefix = prefix.Substring(0, prefix.Length - 1);          // "Ctrl+Alt+" or ""
                 string list = string.Join(", ", items[mods].ToArray());

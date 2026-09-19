@@ -1897,7 +1897,8 @@ namespace Ohman {
                 UpdateDriverRow();
                 tgSuppress.IsChecked = S.SuppressOgh;
                 tgHotkeys.IsChecked = S.Hotkeys;
-                string hk = HotkeyTable.Summary(E.GetHotkeys());
+                string omen = S.Key == KeyAction.Show ? Program.DisplayName : S.Key == KeyAction.Cycle ? "cycles" : S.Key == KeyAction.MaxFan ? "max fan" : S.Key == KeyAction.Run ? "runs a command" : null;
+                string hk = HotkeyTable.Summary(E.GetHotkeys(), omen);
                 if (hk != hotkeySubFor) { hotkeySubFor = hk; txtHotkeysSub.Text = hk; if (hotkeysOpen) BuildHotkeyPanel(); }
                 tgEcoBattery.IsChecked = S.EcoOnBattery;
                 tgSyncPower.IsChecked = S.SyncWinPower;
@@ -2097,7 +2098,7 @@ namespace Ohman {
         static System.Windows.Shapes.Path HotkeyGlyph(bool open) {
             const string pencil = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
             const string tick = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z";
-            return new System.Windows.Shapes.Path { Data = Geometry.Parse(open ? tick : pencil), Fill = Ui.Brush(Ui.BalColor), Width = 14, Height = 14, Stretch = Stretch.Uniform };
+            return new System.Windows.Shapes.Path { Data = Geometry.Parse(open ? tick : pencil), Fill = Ui.Sub, Width = 14, Height = 14, Stretch = Stretch.Uniform };
         }
         void ToggleHotkeyPanel() {
             hotkeysOpen = !hotkeysOpen;

@@ -140,9 +140,10 @@ namespace Ohman {
         ValueLink chipCpu, chipChassis, chipFans, chipHold;
         int cpuLo = 70, chassisLo = 40;                             // the first entry of each temperature list
         static readonly int[] HoldChoices = { 30, 60, 120, 180, 300 };
+        int[] holdChoices = HoldChoices;                        // plus the stored value when it is not one of these
         int[] guardLevels = new int[0];                         // what each entry of the fans dropdown means, 0 = max
         DispatcherTimer guardDebounce;
-        int lastChassis = -1;
+        int lastChassis = -1, cpuTipFor = -1, chassisTipFor = -1;
         TextBlock txtGuardSub, txtMaxCoolSub, txtKeyCmdHint;
         Button btnClose;
         Border toast;
@@ -646,25 +647,25 @@ namespace Ohman {
 
             OnSwitch(tgHotkeys, delegate(bool on) { Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });
             btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
-            btnHotkeys.Content = HotkeyGlyph(false);
+            btnHotkeys.Content = PencilGlyph(false);
             PreviewKeyUp += delegate { ShowHeldModifiers(); };
             BuildGuardLine();
             // The sentence is the row. Its values are grey words until the pencil, then the accent and a list on
             // click; the tick greys them again. Same pencil and tick as the hotkeys row.
             txtGuardSub.Visibility = Visibility.Collapsed;
             guardLine.Visibility = Visibility.Visible;
-            btnGuard.Content = HotkeyGlyph(false);
+            btnGuard.Content = PencilGlyph(false);
             btnGuard.ToolTip = "Change the rule";
             btnGuard.Click += delegate {
                 guardOpen = !guardOpen;
-                btnGuard.Content = HotkeyGlyph(guardOpen);
+                btnGuard.Content = PencilGlyph(guardOpen);
                 btnGuard.ToolTip = guardOpen ? "Done" : "Change the rule";
                 foreach (ValueLink v in new[] { chipCpu, chipChassis, chipFans, chipHold }) v.Editable = guardOpen;
             };
             guardDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             guardDebounce.Tick += delegate {
                 guardDebounce.Stop();
-                int cpu = cpuLo + chipCpu.Index, ch = chassisLo + chipChassis.Index, lvl = guardLevels[chipFans.Index], hold = HoldChoices[chipHold.Index];
+                int cpu = cpuLo + chipCpu.Index, ch = chassisLo + chipChassis.Index, lvl = guardLevels[chipFans.Index], hold = holdChoices[chipHold.Index];
                 Bg(delegate { E.SetGuardLimits(cpu, ch, lvl, hold); });
             };
             PreviewKeyDown += OnHotkeyCapture;
@@ -805,9 +806,8 @@ namespace Ohman {
         void GuardText() {
             var g = E.P.Guard;
             SyncGuardLine();
-            txtGuardSub.Text = "When CPU " + E.GuardCpuHot + "° or chassis " + E.GuardChassisHot + "° turn fans " + (E.GuardLevel > 0 ? E.Rpm(E.GuardLevel) : "max") + " for " + HoldText(E.GuardHoldSeconds);
             txtMaxCoolSub.Text = "Below " + g.MaxFanCoolBelow + "° for " + (g.MaxFanCoolSeconds / 60) + " minutes";
-            txtGuardNote.Text = Program.DisplayName + " forces max fan above " + g.CpuHot + "° CPU";
+            txtGuardNote.Text = Program.DisplayName + " forces " + (E.GuardLevel > 0 ? E.Rpm(E.GuardLevel) : "max fan") + " above " + E.GuardCpuHot + "° CPU";
         }
         /// <summary>Switching the safety net off is the one thing in here that asks twice, wherever it is switched off from.</summary>
         bool ConfirmGuardOff() {
@@ -1749,7 +1749,9 @@ namespace Ohman {
                 // Said as what it is doing, not as what it opened. "CPU registers" answered a question nobody asked.
                 // The simulated build takes this branch too, so the preview shows the row people will actually see.
                 name = DriverName();
-                sub = " · " + (demo ? "simulated" : E.Route == Engine.FanRoute.Ec ? "fan levels and CPU temperature" : intel ? "CPU temperature and power limits" : "CPU temperature");
+                string does = E.Route == Engine.FanRoute.Ec ? "fan levels" : null;
+                if (E.Cpu != null) does = (does != null ? does + " and " : "") + (intel ? "CPU temperature and power limits" : "CPU temperature");
+                sub = " · " + (demo ? "simulated" : does ?? "open");
                 driverState = DriverState.Ready;
                 if (!demo && S.DriverInstalledByOhman) link = "Remove";
             } else { title = "Hardware driver not detected"; sub = E.DriverWhy; link = "Troubleshoot"; driverState = DriverState.Broken; }
@@ -1971,7 +1973,7 @@ namespace Ohman {
         void OnSensors(SensorSnapshot s) {
             E.CpuTemp = s.CpuTemp;
             E.CpuTempNow = s.CpuTempNow;
-            if (!double.IsNaN(s.CpuTemp)) chipCpu.ToolTip = "CPU is " + s.CpuTemp.ToString("0") + "\u00b0 right now";
+            if (!double.IsNaN(s.CpuTemp)) { int d = (int)Math.Round(s.CpuTemp); if (d != cpuTipFor) { cpuTipFor = d; chipCpu.ToolTip = "CPU is " + d + "\u00b0 right now"; } }
             E.GpuTemp = s.GpuTemp;
             onBattery = s.OnBattery;
             UpdateTrayTemp(s.CpuTemp);
@@ -2021,7 +2023,7 @@ namespace Ohman {
                 Dispatcher.BeginInvoke((Action)delegate {
                     if (f != null) {
                         lastFans = f;
-                        if (t >= 0) { lastChassis = t; chipChassis.ToolTip = "Chassis is " + t + "\u00b0 right now"; }
+                        if (t >= 0) { lastChassis = t; if (t != chassisTipFor) { chassisTipFor = t; chipChassis.ToolTip = "Chassis is " + t + "\u00b0 right now"; } }
                         bigFan1.Text = Level(f[0]);
                         bigFan2.Text = Level(f[1]);
                         UpdateFanStatus();
@@ -2133,7 +2135,7 @@ namespace Ohman {
         // ---------- customising them ----------
         /// <summary>A filled pencil to open and a tick to close, drawn rather than typed: the icon font's pencil is
         /// a hairline at this size and reads as a scratch on the row.</summary>
-        static System.Windows.Shapes.Path HotkeyGlyph(bool open) {
+        static System.Windows.Shapes.Path PencilGlyph(bool open) {
             const string pencil = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
             const string tick = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z";
             return new System.Windows.Shapes.Path { Data = Geometry.Parse(open ? tick : pencil), Fill = Ui.Sub, Width = 14, Height = 14, Stretch = Stretch.Uniform };
@@ -2142,7 +2144,7 @@ namespace Ohman {
             hotkeysOpen = !hotkeysOpen;
             if (!hotkeysOpen) StopListening();
             // A pencil to open, a tick to close: the same spot, one glyph, no words to wrap the sub-line around.
-            btnHotkeys.Content = HotkeyGlyph(hotkeysOpen);
+            btnHotkeys.Content = PencilGlyph(hotkeysOpen);
             btnHotkeys.ToolTip = hotkeysOpen ? "Done" : "Change the shortcuts: click one, then press the keys you want. Esc keeps the old one, Backspace removes it.";
             txtHotkeysSub.Visibility = hotkeysOpen ? Visibility.Collapsed : Visibility.Visible;   // the panel is the sub-line, in full
             if (hotkeysOpen) BuildHotkeyPanel();
@@ -2230,10 +2232,12 @@ namespace Ohman {
             string[] before = E.SnapshotHotkeys();
             E.SetHotkey(action, h);
             listening = -1;
+            hotkeyBusy[idx] = false;                 // a verdict on the old key is not one on the new
             if (HotkeysOn) RegisterHotkeys();
             // Windows said no: another program owns that combination. The old binding comes back, and the
             // toast says why nothing changed rather than leaving a shortcut on screen that does nothing.
-            if (hotkeyBusy[idx]) {
+            // Only a registration that ran can say so; with the switch off the new key is simply kept.
+            if (HotkeysOn && hotkeyBusy[idx]) {
                 UnregisterHotkeys();
                 E.RestoreHotkeys(before);          // including any action the new key was taken from
                 if (HotkeysOn) RegisterHotkeys();
@@ -2259,27 +2263,35 @@ namespace Ohman {
         // ---------- the thermal guard's rule, as a sentence ----------
         static string HoldText(int s) { return s % 60 == 0 && s >= 60 ? (s / 60) + " min" : s + " s"; }
         static TextBlock Word(string t) { return new TextBlock { Text = t, FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) }; }
-        static StackPanel Phrase(string words, UIElement value) { var p = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 4, 0) }; p.Children.Add(Word(words)); p.Children.Add(value); return p; }
         static string[] Degrees(int lo, int hi) { var r = new string[hi - lo + 1]; for (int i = 0; i < r.Length; i++) r[i] = (lo + i) + "\u00b0"; return r; }
         /// <summary>"When CPU [95°] or chassis [62°], turn fans [Max] for (dial) 1 min". The words are the sub-line's
         /// and the numbers are the controls, so there is nothing to open and the rule reads as the rule.</summary>
         void BuildGuardLine() {
             guardLine.Children.Clear();
             int tj = 100;
-            try { if (E.Cpu != null) { int t = E.Cpu.Poll().TjMax; if (t > 0) tj = t; } } catch { }
-            chipCpu = new ValueLink { Items = Degrees(cpuLo, Math.Max(90, tj - 5)) };
-            chipChassis = new ValueLink { Items = Degrees(chassisLo, 75) };
+            try { if (E.Cpu != null) { int t = E.Cpu.Poll(false).TjMax; if (t > 0) tj = t; } } catch { }   // light: TjMax is cached, no need to spend the energy window
+            // Every list contains the value the engine is running, wherever it came from: a hand-edited file, a
+            // ceiling the learner has since moved, a limit past the usual range. The words must never say one
+            // rule while the guard runs another.
+            cpuLo = Math.Min(70, E.GuardCpuHot); chassisLo = Math.Min(40, E.GuardChassisHot);
+            chipCpu = new ValueLink { Items = Degrees(cpuLo, Math.Max(Math.Max(90, tj - 5), E.GuardCpuHot)) };
+            chipChassis = new ValueLink { Items = Degrees(chassisLo, Math.Max(75, E.GuardChassisHot)) };
             // Max, then a ladder of levels down to half of the ceiling, in the unit this board shows fans in.
             int ceiling = E.P.Curve.Ceiling;
             var levels = new System.Collections.Generic.List<int> { 0 };
-            var names = new System.Collections.Generic.List<string> { "Max" };
-            names[0] = "max";
-            for (int pct = 90; pct >= 50; pct -= 10) { int lvl = (int)Math.Round(ceiling * pct / 100.0); levels.Add(lvl); names.Add(E.Rpm(lvl)); }
+            for (int pct = 90; pct >= 50; pct -= 10) { int lvl = (int)Math.Round(ceiling * pct / 100.0); if (!levels.Contains(lvl)) levels.Add(lvl); }
+            if (E.GuardLevel > 0 && !levels.Contains(E.GuardLevel)) { levels.Add(E.GuardLevel); levels.Sort(); levels.Reverse(); levels.Remove(0); levels.Insert(0, 0); }
             guardLevels = levels.ToArray();
-            chipFans = new ValueLink { Items = names.ToArray(), ToolTip = "A stalled fan always gets max, whatever this says" };
-            var holds = new string[HoldChoices.Length];
-            for (int i = 0; i < holds.Length; i++) holds[i] = HoldText(HoldChoices[i]);
+            var names = new string[guardLevels.Length];
+            for (int i = 0; i < names.Length; i++) names[i] = guardLevels[i] == 0 ? "max" : E.Rpm(guardLevels[i]);
+            chipFans = new ValueLink { Items = names, ToolTip = "A stalled fan always gets max, whatever this says" };
+            var holdList = new System.Collections.Generic.List<int>(HoldChoices);
+            if (!holdList.Contains(E.GuardHoldSeconds)) { holdList.Add(E.GuardHoldSeconds); holdList.Sort(); }
+            holdChoices = holdList.ToArray();
+            var holds = new string[holdChoices.Length];
+            for (int i = 0; i < holds.Length; i++) holds[i] = HoldText(holdChoices[i]);
             chipHold = new ValueLink { Items = holds, ToolTip = "How long it holds on after both readings are back under" };
+            foreach (ValueLink v in new[] { chipCpu, chipChassis, chipFans, chipHold }) v.Editable = guardOpen;
             Action changed = delegate { if (syncing) return; guardDebounce.Stop(); guardDebounce.Start(); };
             chipCpu.Changed += delegate { changed(); };
             chipChassis.Changed += delegate { changed(); };
@@ -2297,15 +2309,16 @@ namespace Ohman {
         }
         /// <summary>The controls from the settings, inside Synced so their Changed does not write them back.</summary>
         void SyncGuardLine() {
+            // Rebuild when the engine's rule is not on the lists, so the sentence never shows a neighbour of it.
+            bool stale = E.GuardCpuHot < cpuLo || E.GuardCpuHot >= cpuLo + chipCpu.Items.Length
+                || E.GuardChassisHot < chassisLo || E.GuardChassisHot >= chassisLo + chipChassis.Items.Length
+                || Array.IndexOf(guardLevels, E.GuardLevel) < 0 || Array.IndexOf(holdChoices, E.GuardHoldSeconds) < 0;
+            if (stale) BuildGuardLine();
             Synced(delegate {
-            chipCpu.Index = E.GuardCpuHot - cpuLo;
-            chipChassis.Index = E.GuardChassisHot - chassisLo;
-            int at = 0;
-            for (int i = 0; i < guardLevels.Length; i++) if (guardLevels[i] == E.GuardLevel) at = i;
-            chipFans.Index = at;
-            int h = 1;
-            for (int i = 0; i < HoldChoices.Length; i++) if (HoldChoices[i] == E.GuardHoldSeconds) h = i;
-            chipHold.Index = h;
+                chipCpu.Index = E.GuardCpuHot - cpuLo;
+                chipChassis.Index = E.GuardChassisHot - chassisLo;
+                chipFans.Index = Array.IndexOf(guardLevels, E.GuardLevel);
+                chipHold.Index = Array.IndexOf(holdChoices, E.GuardHoldSeconds);
             });
         }
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) {

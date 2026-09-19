@@ -47,17 +47,19 @@ namespace Ohman {
         /// polls eighty times in two, and the energy counter is a difference against the last call, so two
         /// callers sharing an instance would take each other's measurement window.</summary>
         public CpuTelemetry Poll() { return Poll(true); }
-        /// <summary>withClock false leaves the clock alone. Reading it pins the caller to core 0, and the driver
-        /// report samples this eighty times in two seconds to characterise the die sensor: pinning every one of
-        /// those samples would measure one core through an affinity change rather than the sensor free-running,
-        /// which is the observer effect that section exists to rule out.</summary>
-        public CpuTelemetry Poll(bool withClock) {
+        /// <summary>full false is a light poll: the temperature and limits only. The driver report samples this
+        /// eighty times in two seconds to characterise the die sensor, and a full poll would spoil two other
+        /// things each time: the clock pins the caller to core 0, so the spread would be one core measured
+        /// through an affinity change rather than the sensor free-running; and the energy counter is a
+        /// difference against the last call, so eighty calls leave the sensor thread a window too short to
+        /// divide by and its wattage drops out for a tick.</summary>
+        public CpuTelemetry Poll(bool full) {
             lock (sync) {
-                skipClock = !withClock;
-                try { return PollCore(); } finally { skipClock = false; }
+                light = !full;
+                try { return PollCore(); } finally { light = false; }
             }
         }
-        bool skipClock;
+        bool light;
 
         public virtual void Dispose() { if (Module != null) Module.Dispose(); }
 
@@ -78,7 +80,7 @@ namespace Ohman {
         /// reads are pinned to core 0 for that reason, and the result is that core's clock rather than a package
         /// average, which is the same thing the Windows counter approximates.</summary>
         protected double Clock() {
-            if (BaseMhz <= 0 || skipClock) return double.NaN;
+            if (BaseMhz <= 0 || light) return double.NaN;
             ulong a = 0, m = 0;      // && short-circuits, so the second may never be written
             bool ok;
             IntPtr prev = IntPtr.Zero;
@@ -123,6 +125,7 @@ namespace Ohman {
 
         /// <summary>Energy counters are 32-bit and wrap; the difference over the interval is the power.</summary>
         protected double Power(ulong now) {
+            if (light) return double.NaN;              // and leave the window for the caller that owns it
             DateTime t = DateTime.UtcNow;
             double w = double.NaN;
             if (lastEnergyAt != DateTime.MinValue) {

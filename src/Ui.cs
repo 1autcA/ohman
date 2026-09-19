@@ -714,7 +714,7 @@ namespace Ohman {
                     string what = "";
                     try { what = E.FactoryReset(); } catch (Exception ex) { Log.Write("factory reset: " + ex.Message); }
                     if (alsoDriver) {
-                        try { if (E.RemoveDriver()) what += "  - removed the driver\n"; } catch (Exception ex) { Log.Write("reset driver: " + ex.Message); }
+                        try { if (E.RemoveDriver(false)) what += "  - removed the driver\n"; } catch (Exception ex) { Log.Write("reset driver: " + ex.Message); }
                     }
                     Dispatcher.BeginInvoke((Action)delegate {
                         try { SetAutostart(false); } catch (Exception ex) { Log.Write("reset autostart: " + ex.Message); }

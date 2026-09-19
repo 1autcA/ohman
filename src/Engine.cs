@@ -201,6 +201,7 @@ namespace Ohman {
                         case "DriverInstalledByOhman": if (bool.TryParse(v, out b)) s.DriverInstalledByOhman = b; break;
                         case "DriverRestartPending": if (bool.TryParse(v, out b)) s.DriverRestartPending = b; break;
                         case "DriverNudgeDismissed": s.DriverNudgeDismissed = v.Length > 24 ? v.Substring(0, 24) : v; break;
+                        case "FanCeilingSeen": { int fc; if (int.TryParse(v, out fc) && fc >= 0 && fc <= 255) s.FanCeilingSeen = fc; break; }
                     }
                 }
             } catch (Exception ex) { Log.Write("settings apply " + k + ": " + ex.Message); }
@@ -257,6 +258,7 @@ namespace Ohman {
                 sb.AppendLine("DriverInstalledByOhman=" + DriverInstalledByOhman);
                 sb.AppendLine("DriverRestartPending=" + DriverRestartPending);
                 sb.AppendLine("DriverNudgeDismissed=" + DriverNudgeDismissed);
+                sb.AppendLine("FanCeilingSeen=" + FanCeilingSeen);
                 sb.AppendLine("MaxBackWhenCool=" + MaxBackWhenCool);
                 sb.AppendLine("MaxStopAfterMin=" + MaxStopAfterMin);
                 sb.AppendLine("ManualLinked=" + ManualLinked);
@@ -802,6 +804,10 @@ namespace Ohman {
             l1 = P.Curve.ClampOrOff(l1);
             l2 = P.Curve.ClampOrOff(l2);
             if (Route == FanRoute.Ec) return WriteLevelsEc(l1, l2, what);
+            // A refusing board whose EC route was dropped (three failures, or a rest after timeouts) gets it back
+            // the moment the controller is usable again. Without this the give-up branch below is the only other
+            // caller of ChooseRoute, and it sits behind the refusal check, so a rest was permanent until restart.
+            if (fanLevelsRefused && Ec != null && ChooseRoute() == FanRoute.Ec) return WriteLevelsEc(l1, l2, what);
             if (fanLevelsRefused) return false;
             if (Try(delegate { Hw.GetFanCount(); Hw.SetFanLevels(l1, l2); }, what)) { curLevel1 = l1; curLevel2 = l2; fanWriteFailures = 0; fanFailureShown = false; return true; }
             fanWriteFailures++;
@@ -871,14 +877,20 @@ namespace Ohman {
             string why;
             Cpu = CpuRegisters.Open(out why);
             if (Cpu == null) {
-                // The one open that says whether the driver is alive at all. A pending restart is the common
-                // reason, and an install that has had its restart clears the flag here.
+                string svc = PawnIo.ServiceState();
                 DriverWhy = why ?? "unavailable";
-                Log.Write("driver: CPU registers unavailable: " + DriverWhy + " · service " + PawnIo.ServiceState());
-                if (!S.DriverRestartPending && PawnIo.ServiceState() != "running") { DriverWhy += " · the PawnIO service is " + PawnIo.ServiceState(); }
-                return;
+                Log.Write("driver: CPU registers unavailable: " + DriverWhy + " · service " + svc);
+                // "Restart to finish" is only true while the service is registered and not yet started. Once it is
+                // running the restart has happened and something else is wrong; if it is not registered at all the
+                // install never took. Either way the row must offer Troubleshoot, not another restart.
+                if (S.DriverRestartPending && svc != "stopped" && svc != "starting") { S.DriverRestartPending = false; S.Save(); }
+                if (!S.DriverRestartPending && svc != "running") DriverWhy += " · the PawnIO service is " + svc;
+                // Only a device that cannot be opened means the driver itself is not there. A module the driver
+                // rejected (a CPU it has no support for) says nothing about the EC, which is its own module and
+                // on the boards that need it the whole reason the driver was installed.
+                if (DriverWhy.IndexOf("cannot open the PawnIO device", StringComparison.OrdinalIgnoreCase) >= 0) return;
             }
-            if (S.DriverRestartPending) { S.DriverRestartPending = false; S.Save(); }
+            else if (S.DriverRestartPending) { S.DriverRestartPending = false; S.Save(); }
             if (P.Ec != null) {
                 PawnIoModule m = PawnIo.Open("LpcACPIEC", out why);
                 if (m == null) Log.Write("driver: EC module unavailable: " + why);
@@ -887,6 +899,14 @@ namespace Ohman {
                     // against two readings of this machine we already have: the firmware's fan speeds and the
                     // CPU's own temperature.
                     var ec = new EmbeddedController(new PawnIoEcPorts(m), P.Ec);
+                    // Which register pair drives the fans is only knowable by driving them, which drivertest's fan
+                    // test does in its own process. It leaves the answer in a file of its own rather than in the
+                    // settings, which the running instance owns and would write over on exit.
+                    try {
+                        string pair = System.IO.File.Exists(EcPairPath) ? System.IO.File.ReadAllText(EcPairPath).Trim() : "";
+                        if (pair == "percent") { P.Ec.UsePercent = true; Log.Write("driver: fan levels go to the percent pair (measured by the fan test)"); }
+                        else if (pair == "rpm") P.Ec.UsePercent = false;
+                    } catch { }
                     int[] rpm = null;
                     double die = double.NaN;
                     try { rpm = Hw.GetFanLevels(); } catch { }
@@ -897,8 +917,12 @@ namespace Ohman {
                 }
             }
             Route = ChooseRoute();
-            Log.Write("driver: PawnIO " + DriverVersion + " · cpu=" + Cpu.Describe + " · ec=" + (Ec == null ? "no map for this board" : ecVerified ? P.Ec.Name : "map rejected") + " · fan route " + Route);
+            Log.Write("driver: PawnIO " + DriverVersion + " · cpu=" + (Cpu != null ? Cpu.Describe : "unavailable") + " · ec=" + (Ec == null ? "no map for this board" : ecVerified ? P.Ec.Name : "map rejected") + " · fan route " + Route);
         }
+        /// <summary>Where the fan test records which register pair moved the fans: "rpm" or "percent".</summary>
+        public static string EcPairPath { get { return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), "ecpair.txt"); } }
+        /// <summary>Set by the fan test in the report process: 1 = the rpm pair moved the fans, 2 = the percent pair.</summary>
+        public int EcPairFound;
         void CloseDriver() {
             try { if (Cpu != null) Cpu.Dispose(); } catch { }
             try { if (Ec != null) Ec.Dispose(); } catch { }
@@ -920,7 +944,7 @@ namespace Ohman {
             Route = (Ec != null && ecVerified && need && !Ec.Resting) ? FanRoute.Ec : FanRoute.Mailbox;
             // A route taking over starts clean: fanWriteFailures counts mailbox refusals, and three of them back
             // AutoTick off to once a minute, which on the one board this route rescues is permanent.
-            if (Route == FanRoute.Ec && was != FanRoute.Ec) { fanWriteFailures = 0; fanFailureShown = false; }
+            if (Route == FanRoute.Ec && was != FanRoute.Ec) { fanWriteFailures = 0; fanFailureShown = false; ecFailures = 0; Log.Write("fan route: EC"); }
             return Route;
         }
 
@@ -978,7 +1002,9 @@ namespace Ohman {
 
         /// <summary>Remove the driver again. Ours to offer only when we put it there; another app may still be
         /// using it, which the dialog says before this is called.</summary>
-        public bool RemoveDriver() {
+        public bool RemoveDriver() { return RemoveDriver(true); }
+        /// <summary>reapply false: called from a factory reset that has just handed the fans back, which must stay handed back.</summary>
+        public bool RemoveDriver(bool reapply) {
             if (DriverBusy) return false;
             DriverBusy = true;
             DriverProgress = "Removing…";
@@ -993,10 +1019,12 @@ namespace Ohman {
                 if (ok) { S.DriverInstalledByOhman = false; S.DriverRestartPending = false; S.Save(); }
                 // Either way, re-read the machine. InitDriver refreshes the version the row reads, and skipping it
                 // on the path that succeeded left the row offering to troubleshoot a removal that had worked.
-                InitDriver();
+                // Under the lock, like the other two callers: a failed removal re-opens the modules and may pick
+                // the EC route, and the fan tick must not see that happen halfway through a write.
+                lock (applySync) InitDriver();
                 if (ok) Say("Driver removed");
                 else { DriverWhy = error; Fire(Toast, "Could not remove the driver: " + error, true); }
-                lock (applySync) ApplyFanCore();
+                if (reapply) lock (applySync) ApplyFanCore();
                 return ok;
             } finally { DriverBusy = false; DriverProgress = ""; Changed(); }
         }

@@ -195,6 +195,12 @@ namespace Ohman {
             string rep;
             try { rep = build(eng); } catch (Exception ex) { rep = "report failed: " + ex; }
             Console.WriteLine(rep);
+            // The fan test's one durable result. Its own file, because this process holds the settings with
+            // NoPersist and a running Ohman would write over anything put there anyway.
+            if (eng.EcPairFound != 0) {
+                try { System.IO.File.WriteAllText(Engine.EcPairPath, eng.EcPairFound == 2 ? "percent" : "rpm"); Console.WriteLine("recorded which fan register pair this board uses; Ohman reads it at its next start"); }
+                catch (Exception ex) { Console.WriteLine("could not record the fan register pair: " + ex.Message); }
+            }
             try {
                 string p = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Log.Path), fileName);
                 System.IO.File.WriteAllText(p, rep);

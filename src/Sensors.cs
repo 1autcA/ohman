@@ -151,6 +151,9 @@ namespace Ohman {
                 // zone the firmware chose to expose. The zone stays in the snapshot for the report to compare.
                 s.CpuFromDriver = !double.IsNaN(die);
                 s.CpuTempNow = s.CpuFromDriver ? die : s.AcpiTemp;
+                // Same rule as the wattage: the die and the ACPI zone are not the same numbers, and a median that
+                // ranks one against the other after a source change reports a temperature neither produced.
+                if (s.CpuFromDriver != tempFromDriver) { tempFromDriver = s.CpuFromDriver; recentCount = 0; }
                 s.CpuTemp = Steady(s.CpuTempNow);
                 if (!disagreementLogged && s.CpuFromDriver && !double.IsNaN(s.AcpiTemp) && Math.Abs(s.CpuTemp - s.AcpiTemp) > 15) {
                     disagreementLogged = true;
@@ -207,6 +210,7 @@ namespace Ohman {
         /// within two ticks. Applied to the ACPI zone too, where it changes nothing.</summary>
         readonly double[] recent = new double[3];
         int recentCount;
+        bool tempFromDriver;
         double Steady(double now) {
             if (double.IsNaN(now)) { recentCount = 0; return now; }
             recent[2] = recent[1];
@@ -215,6 +219,18 @@ namespace Ohman {
             if (recentCount < 3) { recentCount++; if (recentCount < 3) return now; }
             double a = recent[0], b = recent[1], c = recent[2];
             return Math.Max(Math.Min(a, b), Math.Min(Math.Max(a, b), c));
+        }
+
+        /// <summary>The hottest ACPI zone right now, in degrees C, or NaN: the same 283..398 K window the sensor
+        /// loop applies, for the reports, so that the number they print is the number the panel would show.</summary>
+        public static double AcpiZoneOnce() {
+            double hot = double.NaN;
+            try {
+                var cat = new PerformanceCounterCategory("Thermal Zone Information");
+                foreach (string n in cat.GetInstanceNames())
+                    using (var pc = new PerformanceCounter("Thermal Zone Information", "Temperature", n, true)) { double k = pc.NextValue(); if (k >= 283 && k <= 398 && (double.IsNaN(hot) || k > hot)) hot = k; }
+            } catch { }
+            return double.IsNaN(hot) ? hot : Math.Round(hot - 273.15);
         }
 
         /// <summary>Every other tick while the GPU is busy; every 30 s once it has been idle three times running. Work

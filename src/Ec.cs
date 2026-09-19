@@ -54,7 +54,8 @@ namespace Ohman {
         public byte FanSetPct1 = 0x2C, FanSetPct2 = 0x2D;           // XSS1, XSS2: the same thing as a percentage
         /// <summary>Which pair actually drives the fans here. Both exist on every HP board anyone has looked at,
         /// only one is wired to anything, and which one is a per-model fact: NBFC's community configs have HP
-        /// laptops of the same year using each. Only ProbeFanWrite can answer it, so only it sets this.</summary>
+        /// laptops of the same year using each. Only ProbeFanWrite can answer it; its answer is kept in the
+        /// file Engine.EcPairPath names and read back when the EC is opened.</summary>
         public bool UsePercent;
         public byte Manual = 0x62, ManualOn = 0x06, ManualOff = 0x00;   // OMCC
         // XFCD counts down and hands the fans back when it reaches zero, so zero itself is "no timeout" and is
@@ -287,8 +288,10 @@ namespace Ohman {
         public bool ConfirmFansRunning(int safeLevel, int ceiling) {
             Thread.Sleep(3000);
             EcReading r = Read();
-            if (r.Rpm1 < 0 || r.Rpm1 > 300 || r.Rpm2 > 300) return true;       // reading them at all, and moving
-            Log.Write("EC: fans still read " + r.Rpm1 + "/" + r.Rpm2 + " rpm after handing control back; forcing " + safeLevel);
+            if (r.Rpm1 > 300 || r.Rpm2 > 300) return true;                   // turning
+            // A tachometer that did not answer has confirmed nothing, and this is the one place a guess is not
+            // allowed: the fans were just stopped on purpose, so no answer is treated the same as no movement.
+            Log.Write("EC: fans " + (r.Rpm1 < 0 ? "could not be read" : "still read " + r.Rpm1 + "/" + r.Rpm2 + " rpm") + " after handing control back; forcing " + safeLevel);
             Forget();
             HoldFans(safeLevel, safeLevel, ceiling);
             return false;
@@ -298,7 +301,9 @@ namespace Ohman {
         /// controller can be checked by reading it; this cannot, because both pairs accept a write and only one
         /// is connected. Only ever asks for more air than is already moving, and hands the fans back in a
         /// finally whatever happens. Fifteen seconds.</summary>
-        public string ProbeFanWrite(int safeLevel, int ceiling) {
+        /// <param name="pair">0 nothing moved the fans, 1 the rpm pair did, 2 the percent pair did.</param>
+        public string ProbeFanWrite(int safeLevel, int ceiling, out int pair) {
+            pair = 0;
             var sb = new StringBuilder();
             Claim();
             int rest = AverageRpm();
@@ -326,6 +331,7 @@ namespace Ohman {
                     int rise = now - rest;
                     sb.AppendLine("  " + what.PadRight(27) + now + " rpm, " + (rise >= 0 ? "+" : "") + rise
                         + (rise > 400 ? "   <-- this pair drives the fans on this board" : "   no change"));
+                    if (rise > 400 && pair == 0) pair = pct ? 2 : 1;
                     ReleaseFans();      // not zero-with-manual-on, which is a stopped fan
                     Thread.Sleep(2500);
                 }

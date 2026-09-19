@@ -236,13 +236,7 @@ namespace Ohman {
                     sb.AppendLine("  machine lifts it tens of degrees for a few milliseconds. The panel, the fan curve and");
                     sb.AppendLine("  the thermal guard all follow the median of three readings, so a lone spike drives nothing.");
                 }
-                double acpi = double.NaN;
-                try {
-                    var cat = new PerformanceCounterCategory("Thermal Zone Information");
-                    foreach (string n in cat.GetInstanceNames())
-                        using (var pc = new PerformanceCounter("Thermal Zone Information", "Temperature", n, true)) { double k = pc.NextValue(); if (k >= 283 && k <= 398 && (double.IsNaN(acpi) || k > acpi)) acpi = k; }
-                    if (!double.IsNaN(acpi)) acpi = Math.Round(acpi - 273.15);
-                } catch { }
+                double acpi = Sensors.AcpiZoneOnce();
                 int mailbox = -1;
                 try { mailbox = e.Hw.GetTemperature(); } catch { }
                 sb.AppendLine("  die temperature: " + Num(t.DieTemp, " C").PadRight(10) + " ACPI zone: " + Num(acpi, " C").PadRight(10) + " mailbox 0x23 (ambient): " + (mailbox >= 0 ? mailbox + " C" : "--") + (t.TjMax > 0 ? "   TjMax " + t.TjMax : ""));
@@ -286,8 +280,10 @@ namespace Ohman {
                 } else if (Program.FanProbe && e.EcVerified) {
                     sb.AppendLine();
                     sb.AppendLine("Which register drives the fans (writes, briefly; only ever asks for more air than is already moving)");
-                    sb.Append(e.Ec.ProbeFanWrite(e.P.Curve.Fallback, e.P.Curve.Ceiling));
-                } else if (e.EcVerified) {
+                    int pair;
+                    sb.Append(e.Ec.ProbeFanWrite(e.P.Curve.Fallback, e.P.Curve.Ceiling, out pair));
+                    e.EcPairFound = pair;
+                } else if (e.EcVerified && e.EcFanRouteWanted) {
                     sb.AppendLine("  Run tools\\drivertest.cmd and answer yes to the fan test to find which register actually drives them.");
                 }
             }

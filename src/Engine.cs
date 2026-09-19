@@ -704,7 +704,7 @@ namespace Ohman {
         public void ApplyAll(bool announce) {
             lock (applySync) {
                 if (!BiosOk && !Hw.IsDemo) return;
-                Try(delegate { Hw.SetMode(ModeByte, OnBattery); }, "Set mode");
+                Try(delegate { Hw.SetMode(ModeByte, FansByBios); }, "Set mode");
                 ApplyFanCore();
                 ApplyPowerCore();
                 ApplyGpuCore();
@@ -1195,7 +1195,7 @@ namespace Ohman {
             NoteFanMode(S.Fan);                                      // the new mode brings its own fan setting with it
             lock (applySync) {
                 // the mode's own profile comes with it: fans, power gain and GPU power are remembered per mode
-                if (Try(delegate { Hw.SetMode(ModeByte, OnBattery); }, "Set mode")) { if (announce) Say(ModeName + " mode"); }
+                if (Try(delegate { Hw.SetMode(ModeByte, FansByBios); }, "Set mode")) { if (announce) Say(ModeName + " mode"); }
                 if (!GuardActive) { ApplyFanCore(); lastFanWrite = DateTime.Now; }
                 ApplyPowerCore();
                 ApplyGpuCore();
@@ -1207,7 +1207,7 @@ namespace Ohman {
         public void SetEcoCool(bool on) {
             S.EcoCool = on;
             S.Save();
-            if (ModeIndex == 0) lock (applySync) Try(delegate { Hw.SetMode(ModeByte, OnBattery); }, "Set mode");
+            if (ModeIndex == 0) lock (applySync) Try(delegate { Hw.SetMode(ModeByte, FansByBios); }, "Set mode");
             Changed();
         }
         public void SetFan(FanMode mode, int f1, int f2, bool announce) {
@@ -1220,6 +1220,9 @@ namespace Ohman {
             S.Fan2 = P.Curve.ClampOrOff(f2);
             S.Save();
             if (GuardActive && mode != FanMode.Max) { Say("Thermal guard is holding max fan; " + Choice.Fan[Choice.Of(mode)] + " resumes when cool"); Changed(); return; }
+            // On battery the mode command carries who drives the fans (FansByBios), and that follows the fan
+            // mode: leaving Auto has to take control back before the first level is written.
+            if (OnBattery) lock (applySync) Try(delegate { Hw.SetMode(ModeByte, FansByBios); }, "Set mode");
             lock (applySync) { ApplyFanCore(); lastFanWrite = DateTime.Now; }
             if (announce) Say(mode == FanMode.Max ? "Max fan" : mode == FanMode.Manual ? "Fans " + Rpm(S.Fan1) + " / " + Rpm(S.Fan2) : mode == FanMode.Custom ? "Fans on your curve" : "Fans auto");
             Changed();
@@ -1282,7 +1285,7 @@ namespace Ohman {
                 if (!BiosOk && !Hw.IsDemo) return;
                 lock (applySync) {
                     if (GuardActive) GuardFans();
-                    Try(delegate { Hw.SetMode(ModeByte, OnBattery); }, "Set mode");   // fans are handled by FanTick; this only pins mode and power
+                    Try(delegate { Hw.SetMode(ModeByte, FansByBios); }, "Set mode");   // fans are handled by FanTick; this only pins mode and power
                     ApplyPowerCore();
                     LastHeartbeat = DateTime.Now;
                 }
@@ -1421,6 +1424,13 @@ namespace Ohman {
             new Thread(delegate() { Thread.Sleep(4000); Log.Write("resume: re-applying"); ApplyAll(false); }) { IsBackground = true }.Start();
         }
 
+        /// <summary>The third byte of the mode command, "fan control by BIOS". OGH sends 1 on battery, and so did
+        /// Ohman, copied from it. But OGH has no software curve to lose and Ohman does: with the byte set the
+        /// firmware ignores every level written, and on a 2025 Transcend 14 its own curve keeps the fans off
+        /// until 74 C, which one owner reported as "the fans only work plugged in". So the hand-off happens only
+        /// in Auto, where the quiet firmware curve is a fair reading of what the owner asked for; Manual, Curve
+        /// and Max are explicit choices and stay Ohman's on either power source.</summary>
+        bool FansByBios { get { return OnBattery && S.Fan == FanMode.Auto; } }
         public void OnPowerSource(bool onBattery) {
             bool changed = OnBattery != onBattery;
             OnBattery = onBattery;
@@ -1430,7 +1440,7 @@ namespace Ohman {
                 if (onBattery && !ecoForcedByBattery && ModeIndex != 0) { ecoForcedByBattery = true; modeBeforeBattery = ModeIndex; S.SavedModeOverride = modeBeforeBattery; Say("On battery → Eco"); SetModeCore(0, false); return; }
                 if (!onBattery && ecoForcedByBattery) { ecoForcedByBattery = false; S.SavedModeOverride = -1; SetModeCore(modeBeforeBattery, false); Say("Plugged in → " + ModeName); return; }
             }
-            if (changed) lock (applySync) Try(delegate { Hw.SetMode(ModeByte, OnBattery); }, "Set mode");   // re-send with the DC flag like OGH
+            if (changed) lock (applySync) Try(delegate { Hw.SetMode(ModeByte, FansByBios); }, "Set mode");   // re-send with the DC flag like OGH
         }
 
         // ---------- OGH suppression ----------

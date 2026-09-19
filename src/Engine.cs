@@ -110,6 +110,9 @@ namespace Ohman {
         public int FanBeforeMax = 0;                // FanMode that Max interrupted; survives a restart
         public bool InfoDismissed = false;          // the first-on-this-board note, closed by the user
         public bool Guard = true;                   // thermal guard: force max fan when the machine runs away
+        public int GuardCpu, GuardChassis;          // the guard's own limits, 0 = the profile's
+        public int GuardLevel;                      // what it forces: 0 = max fan, else a fan level
+        public int GuardHold;                       // seconds below the limits before it lets go, 0 = the profile's
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
         public string KeyCommand = "";              // KeyAction.Run: command line the OMEN key starts
         public string[] HotkeyText = new string[HotkeyTable.Count];   // per action: null = default, "" = none, else "Ctrl+Alt+E"
@@ -201,6 +204,10 @@ namespace Ohman {
                         case "LowHzOnBattery": if (bool.TryParse(v, out b)) s.LowHzOnBattery = b; break;
                         case "TrayTemp": if (bool.TryParse(v, out b)) s.TrayTemp = b; break;
                         case "Guard": if (bool.TryParse(v, out b)) s.Guard = b; break;
+                        case "GuardCpu": if (int.TryParse(v, out n) && n >= 70 && n <= 105) s.GuardCpu = n; break;
+                        case "GuardChassis": if (int.TryParse(v, out n) && n >= 40 && n <= 80) s.GuardChassis = n; break;
+                        case "GuardLevel": if (int.TryParse(v, out n) && n >= 0 && n <= 255) s.GuardLevel = n; break;
+                        case "GuardHold": if (int.TryParse(v, out n) && n >= 0 && n <= 900) s.GuardHold = n; break;
                         case "UpdateOnLaunch": if (bool.TryParse(v, out b)) s.UpdateOnLaunch = b; break;
                         case "KeyCommand": s.KeyCommand = v; break;
                         case "DriverUse": if (bool.TryParse(v, out b)) s.DriverUse = b; break;
@@ -260,6 +267,10 @@ namespace Ohman {
                 sb.AppendLine("KeyCommand=" + KeyCommand);
                 for (int i = 0; i < HotkeyTable.Count; i++) if (HotkeyText[i] != null) sb.AppendLine("Hotkey." + HotkeyTable.Keys[i] + "=" + HotkeyText[i]);   // only what differs from the defaults
                 sb.AppendLine("Guard=" + Guard);
+                if (GuardCpu > 0) sb.AppendLine("GuardCpu=" + GuardCpu);
+                if (GuardChassis > 0) sb.AppendLine("GuardChassis=" + GuardChassis);
+                if (GuardLevel > 0) sb.AppendLine("GuardLevel=" + GuardLevel);
+                if (GuardHold > 0) sb.AppendLine("GuardHold=" + GuardHold);
                 sb.AppendLine("UpdateOnLaunch=" + UpdateOnLaunch);
                 sb.AppendLine("DriverUse=" + DriverUse);
                 sb.AppendLine("DriverInstalledByOhman=" + DriverInstalledByOhman);
@@ -1053,7 +1064,7 @@ namespace Ohman {
         void MaxFan(bool on, string what) { Try(delegate { Hw.GetFanCount(); Hw.SetMaxFan(on); }, what); }
 
         void ApplyFanCore() {
-            if (GuardActive) { MaxFan(true, "Guard max fan"); return; }      // the guard owns the fans until it releases
+            if (GuardActive) { GuardFans(); return; }      // the guard owns the fans until it releases
             switch (S.Fan) {
                 case FanMode.Max: MaxFan(true, "Max fan"); break;
                 case FanMode.Manual: MaxFan(false, "Max fan off"); WriteLevels(S.Fan1, S.Fan2, "Fan level"); break;
@@ -1269,7 +1280,7 @@ namespace Ohman {
             try {
                 if (!BiosOk && !Hw.IsDemo) return;
                 lock (applySync) {
-                    if (GuardActive) MaxFan(true, "Guard max fan");
+                    if (GuardActive) GuardFans();
                     Try(delegate { Hw.SetMode(ModeByte, OnBattery); }, "Set mode");   // fans are handled by FanTick; this only pins mode and power
                     ApplyPowerCore();
                     LastHeartbeat = DateTime.Now;
@@ -1294,6 +1305,31 @@ namespace Ohman {
         System.Threading.Timer guard;
 
         /// <summary>Turning the guard off releases it at once; turning it on lets the next tick judge the machine.</summary>
+        // ---------- the guard's limits: the owner's where set, the profile's otherwise ----------
+        public int GuardCpuHot { get { return S.GuardCpu > 0 ? S.GuardCpu : P.Guard.CpuHot; } }
+        public int GuardChassisHot { get { return S.GuardChassis > 0 ? S.GuardChassis : P.Guard.ChassisHot; } }
+        // Release sits the same distance under the limit that the profile's does, so moving a limit moves both.
+        public int GuardCpuSafe { get { return GuardCpuHot - (P.Guard.CpuHot - P.Guard.CpuSafe); } }
+        public int GuardChassisSafe { get { return GuardChassisHot - (P.Guard.ChassisHot - P.Guard.ChassisSafe); } }
+        public int GuardHoldSeconds { get { return S.GuardHold > 0 ? S.GuardHold : P.Guard.SafeSeconds; } }
+        public int GuardLevel { get { return S.GuardLevel; } }
+        public void SetGuardLimits(int cpu, int chassis, int level, int hold) {
+            S.GuardCpu = cpu == P.Guard.CpuHot ? 0 : cpu;
+            S.GuardChassis = chassis == P.Guard.ChassisHot ? 0 : chassis;
+            S.GuardLevel = Math.Max(0, level);
+            S.GuardHold = hold == P.Guard.SafeSeconds ? 0 : hold;
+            S.Save();
+            if (GuardActive) lock (applySync) GuardFans();
+            Changed();
+        }
+        bool guardStalled;
+        /// <summary>What the guard holds the fans at. A stalled fan gets max whatever the setting says: a level
+        /// the fan is not taking is not a level, and max is the one command with its own path.</summary>
+        void GuardFans() {
+            if (GuardLevel <= 0 || guardStalled) { MaxFan(true, "Guard max fan"); return; }
+            MaxFan(false, "Guard level");
+            WriteLevels(GuardLevel, GuardLevel, "Guard level");
+        }
         public void SetGuard(bool on) {
             S.Guard = on;
             S.Save();
@@ -1319,9 +1355,9 @@ namespace Ohman {
                 bool cpuKnown = !double.IsNaN(t);
                 // On a board nobody has verified, the chassis sensor may not mean what the profile's thresholds assume.
                 // Wait until it has read cool once; until then the CPU and the stall test carry the guard on their own.
-                if (c >= 0 && c < P.Guard.ChassisSafe) chassisScaleKnown = true;
+                if (c >= 0 && c < GuardChassisSafe) chassisScaleKnown = true;
                 bool chassisUsable = P.Verified || chassisScaleKnown;
-                bool hot = (cpuKnown && t >= P.Guard.CpuHot) || (chassisUsable && c >= P.Guard.ChassisHot);
+                bool hot = (cpuKnown && t >= GuardCpuHot) || (chassisUsable && c >= GuardChassisHot);
                 bool stalled = cpuKnown && t >= P.Guard.StallCpu && f[0] >= 0 && f[1] >= 0 && (f[0] + f[1]) < P.Guard.StallLevelSum;
                 // Two ticks, not one: a single sample landing inside a spike used to force maximum fan on an idle
                 // laptop, three times in one evening. Sensors hands over a median now, so this is the second
@@ -1330,12 +1366,13 @@ namespace Ohman {
                 if (hot || stalled) guardHotTicks++; else guardHotTicks = 0;
                 if ((hot || stalled) && !GuardActive && guardHotTicks >= 2) {
                     GuardActive = true;
+                    guardStalled = stalled;
                     guardSafeSince = DateTime.MinValue;
                     Log.Write("THERMAL GUARD engaged: cpu=" + (cpuKnown ? t.ToString("0") : "?") + " ambient=" + c + " fans=" + f[0] + "/" + f[1] + (stalled ? " (stalled)" : ""));
                     // "ambient", matching the Home page. Same 0x23 index 1 either way; HP's own device library calls it
                     // Ambient and Ohman called it chassis for a year, so the two lines disagreed on screen.
                     Fire(Toast, "Thermal guard: fans to max (CPU " + (cpuKnown ? t.ToString("0") + "°" : "?") + ", ambient " + c + "°)", true);
-                    lock (applySync) MaxFan(true, "Guard max fan");
+                    lock (applySync) GuardFans();
                     Changed();
                 } else if (GuardActive) {
                     // Max fan has been commanded on every tick since this engaged, so the firmware's own level
@@ -1348,16 +1385,17 @@ namespace Ohman {
                             + f[0] + "/" + f[1] + ". Fan commands are not reaching the fans.");
                         Fire(Toast, "The fans are not answering the thermal guard. Save your work and restart the machine.", true);
                     }
-                    bool safe = (!cpuKnown || t < P.Guard.CpuSafe) && (!chassisUsable || c < P.Guard.ChassisSafe);
+                    bool safe = (!cpuKnown || t < GuardCpuSafe) && (!chassisUsable || c < GuardChassisSafe);
                     // One warm sample no longer restarts the minute. A sensor sitting a degree under its own
                     // threshold crosses it now and then, and requiring sixty unbroken seconds meant the guard
                     // could hold maximum fan on a machine that had already cooled, indefinitely.
                     if (safe) guardWarmTicks = 0; else guardWarmTicks++;
-                    if (guardWarmTicks >= 2) { guardSafeSince = DateTime.MinValue; lock (applySync) MaxFan(true, "Guard max fan"); }
-                    else if (!safe) { lock (applySync) MaxFan(true, "Guard max fan"); }
+                    if (guardWarmTicks >= 2) { guardSafeSince = DateTime.MinValue; lock (applySync) GuardFans(); }
+                    else if (!safe) { lock (applySync) GuardFans(); }
                     else if (guardSafeSince == DateTime.MinValue) guardSafeSince = DateTime.Now;
-                    else if ((DateTime.Now - guardSafeSince).TotalSeconds >= P.Guard.SafeSeconds) {
+                    else if ((DateTime.Now - guardSafeSince).TotalSeconds >= GuardHoldSeconds) {
                         GuardActive = false;
+                        guardStalled = false;
                         guardIgnoredTicks = 0;
                         Log.Write("thermal guard released; fan mode back to " + S.Fan);
                         Fire(Toast, "Thermal guard released", false);

@@ -132,6 +132,15 @@ namespace Ohman {
         int listening = -1;                                     // the action waiting for a key press, or -1
         readonly bool[] hotkeyBusy = new bool[HotkeyTable.Count];   // Windows refused this one: another program has it
         string hotkeySubFor = "?";
+        TextBlock listeningCap;                                 // the "Press keys" cap while listening, so held modifiers can show in it
+        // thermal guard
+        Button btnGuard;
+        StackPanel guardPanel;
+        bool guardOpen;
+        Gauge gCpu, gChassis, gFans, gHold;
+        TextBlock rCpu, rChassis, rFans, rHold;
+        DispatcherTimer guardDebounce;
+        int lastChassis = -1;
         TextBlock txtGuardSub, txtMaxCoolSub, txtKeyCmdHint;
         Button btnClose;
         Border toast;
@@ -374,6 +383,8 @@ namespace Ohman {
             btnHotkeys = F<Button>("BtnHotkeys");
             txtHotkeysSub = F<TextBlock>("TxtHotkeysSub");
             hotkeyPanel = F<StackPanel>("HotkeyPanel");
+            btnGuard = F<Button>("BtnGuard");
+            guardPanel = F<StackPanel>("GuardPanel");
             tgEcoBattery = F<ToggleButton>("TgEcoBattery");
             tgLowHzBattery = F<ToggleButton>("TgLowHzBattery");
             tgSyncPower = F<ToggleButton>("TgSyncPower");
@@ -634,6 +645,15 @@ namespace Ohman {
             OnSwitch(tgHotkeys, delegate(bool on) { Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });
             btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
             btnHotkeys.Content = HotkeyGlyph(false);
+            PreviewKeyUp += delegate { ShowHeldModifiers(); };
+            btnGuard.Content = HotkeyGlyph(false);
+            btnGuard.Click += delegate { ToggleGuardPanel(); };
+            guardDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            guardDebounce.Tick += delegate {
+                guardDebounce.Stop();
+                int cpu = (int)gCpu.Value, ch = (int)gChassis.Value, lvl = gFans.Value > E.P.Curve.Ceiling ? 0 : (int)gFans.Value, hold = (int)gHold.Value;
+                Bg(delegate { E.SetGuardLimits(cpu, ch, lvl, hold); });
+            };
             PreviewKeyDown += OnHotkeyCapture;
             Deactivated += delegate { StopListening(); };     // another window took the keyboard; the keys are not coming here
             OnSwitch(tgEcoBattery, delegate(bool on) { Bg(delegate { E.SetEcoOnBattery(on); }); });
@@ -771,7 +791,7 @@ namespace Ohman {
         /// has to change GuardLimits and the words follow.</summary>
         void GuardText() {
             var g = E.P.Guard;
-            txtGuardSub.Text = "Forces max fan above " + g.CpuHot + "° CPU or " + g.ChassisHot + "° chassis, and when the fans read stalled";
+            txtGuardSub.Text = "Forces " + (E.GuardLevel > 0 ? E.Rpm(E.GuardLevel) : "max fan") + " above " + E.GuardCpuHot + "° CPU or " + E.GuardChassisHot + "° chassis, lets go " + HoldText(E.GuardHoldSeconds) + " after it cools";
             txtMaxCoolSub.Text = "Below " + g.MaxFanCoolBelow + "° for " + (g.MaxFanCoolSeconds / 60) + " minutes";
             txtGuardNote.Text = Program.DisplayName + " forces max fan above " + g.CpuHot + "° CPU";
         }
@@ -1937,6 +1957,7 @@ namespace Ohman {
         void OnSensors(SensorSnapshot s) {
             E.CpuTemp = s.CpuTemp;
             E.CpuTempNow = s.CpuTempNow;
+            if (guardOpen) { gCpu.Live = s.CpuTemp; gCpu.Repaint(); }
             E.GpuTemp = s.GpuTemp;
             onBattery = s.OnBattery;
             UpdateTrayTemp(s.CpuTemp);
@@ -1964,7 +1985,7 @@ namespace Ohman {
             subGpu.Text = "GPU" + (double.IsNaN(s.GpuLoad) ? "" : " · " + s.GpuLoad.ToString("0") + "%") + (double.IsNaN(s.GpuWatts) ? "" : " · " + s.GpuWatts.ToString("0") + " W");
             txtFootRight.Text = s.BatteryPercent >= 0 && s.BatteryPercent <= 100 ? (s.OnBattery ? "Battery " : "AC · ") + s.BatteryPercent + "%" : "";
         }
-        Brush TempBrush(double t) { return double.IsNaN(t) ? Ui.TextB : t >= E.P.Guard.CpuHot ? Ui.Brush(Ui.Danger) : t >= E.P.Guard.WarnAt ? Ui.Brush(Ui.Warn) : Ui.TextB; }
+        Brush TempBrush(double t) { return double.IsNaN(t) ? Ui.TextB : t >= E.GuardCpuHot ? Ui.Brush(Ui.Danger) : t >= E.P.Guard.WarnAt ? Ui.Brush(Ui.Warn) : Ui.TextB; }
         /// <summary>What the wattage is measured against, for the tooltip on it. Null without the driver: the
         /// limits are the CPU's own registers and nothing else on this machine will say what they are.</summary>
         static string PowerLimits(SensorSnapshot s) {
@@ -1986,6 +2007,7 @@ namespace Ohman {
                 Dispatcher.BeginInvoke((Action)delegate {
                     if (f != null) {
                         lastFans = f;
+                        if (t >= 0) { lastChassis = t; if (guardOpen) { gChassis.Live = t; gChassis.Repaint(); } }
                         bigFan1.Text = Level(f[0]);
                         bigFan2.Text = Level(f[1]);
                         UpdateFanStatus();
@@ -2132,6 +2154,7 @@ namespace Ohman {
                 Grid.SetRow(cell, i); Grid.SetColumn(cell, 1);
                 if (listening == i) {
                     Border cap = KeyCap("Press keys…", accent);
+                    listeningCap = (TextBlock)cap.Child;
                     cap.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(600)) { AutoReverse = true, RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever });
                     cell.Children.Add(cap);
                 } else if (b[i].IsEmpty) {
@@ -2188,7 +2211,7 @@ namespace Ohman {
             if (key == Key.Escape) { StopListening(); return; }
             if (key == Key.Back) { E.SetHotkey(action, Hotkey.None); StopListening(); return; }
             Hotkey h;
-            if (!Hotkey.FromKey(key, Keyboard.Modifiers, out h)) return;          // a modifier on its own: keep waiting
+            if (!Hotkey.FromKey(key, Keyboard.Modifiers, out h)) { ShowHeldModifiers(); return; }   // a modifier on its own: show it, keep waiting
             if (!h.Valid) { ShowToast("Hold Ctrl, Alt, Shift or Win with it, or use an F-key", true); return; }
             string[] before = E.SnapshotHotkeys();
             E.SetHotkey(action, h);
@@ -2203,6 +2226,75 @@ namespace Ohman {
                 ShowToast(h + " is already used by another program", true);
             }
             BuildHotkeyPanel();
+        }
+        /// <summary>The cap follows the hands: Ctrl held reads "Ctrl+…", Ctrl and Alt read "Ctrl+Alt+…", and it
+        /// goes back to "Press keys…" when they are let go, so the owner sees the combination forming.</summary>
+        void ShowHeldModifiers() {
+            if (listening < 0 || listeningCap == null) return;
+            uint mods = 0;
+            ModifierKeys m = Keyboard.Modifiers;
+            if ((m & ModifierKeys.Control) != 0) mods |= Hotkey.Ctrl;
+            if ((m & ModifierKeys.Alt) != 0) mods |= Hotkey.Alt;
+            if ((m & ModifierKeys.Shift) != 0) mods |= Hotkey.Shift;
+            if ((m & ModifierKeys.Windows) != 0) mods |= Hotkey.Win;
+            if (mods == 0) { listeningCap.Text = "Press keys\u2026"; return; }
+            string t = new Hotkey(mods, 'X').ToString();
+            listeningCap.Text = t.Substring(0, t.Length - 1) + "\u2026";
+        }
+
+        // ---------- the thermal guard's limits ----------
+        static string HoldText(int s) { return s % 60 == 0 && s >= 60 ? (s / 60) + (s == 60 ? " minute" : " minutes") : s + " s"; }
+        void ToggleGuardPanel() {
+            guardOpen = !guardOpen;
+            btnGuard.Content = HotkeyGlyph(guardOpen);
+            btnGuard.ToolTip = guardOpen ? "Done" : "Change the limits. The white dot on each strip is the reading right now.";
+            if (guardOpen) BuildGuardPanel();
+            guardPanel.Visibility = guardOpen ? Visibility.Visible : Visibility.Collapsed;
+            Remeasure(cur);
+        }
+        /// <summary>Four strips: the two temperatures the guard watches, with the live reading on each so the
+        /// margin is visible; the fan level it forces, with Max at the top end; and how long it holds on after
+        /// the machine has cooled. Built once per opening; the gauges then update in place.</summary>
+        void BuildGuardPanel() {
+            guardPanel.Children.Clear();
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+            int tj = 100;
+            try { if (E.Cpu != null) { int t = E.Cpu.Poll().TjMax; if (t > 0) tj = t; } } catch { }
+            int ceiling = E.P.Curve.Ceiling, floor = E.P.Curve.Floor;
+            // Wide enough that an idle machine's reading sits inside the strip, so the gap to the limit is visible.
+            gCpu = new Gauge { Min = 50, Max = Math.Max(90, tj - 5), Value = E.GuardCpuHot, Live = E.CpuTemp };
+            gChassis = new Gauge { Min = 30, Max = 75, Value = E.GuardChassisHot, Live = lastChassis >= 0 ? lastChassis : double.NaN };
+            gFans = new Gauge { Min = floor, Max = ceiling + 1, Value = E.GuardLevel > 0 ? E.GuardLevel : ceiling + 1, Stops = new[] { Ui.Col("#2C2825"), Ui.BalColor } };
+            gHold = new Gauge { Min = 30, Max = 300, Step = 30, Value = E.GuardHoldSeconds, Stops = new[] { Ui.Col("#2C2825"), Ui.Col("#96918D") } };
+            Gauge[] gauges = { gCpu, gChassis, gFans, gHold };
+            string[] labels = { "CPU", "Chassis", "Fans", "Hold" };
+            var reads = new TextBlock[4];
+            for (int i = 0; i < 4; i++) {
+                int idx = i;
+                g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28) });
+                var name = new TextBlock { Text = labels[i], FontFamily = Ui.UiFont, FontSize = 13, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetRow(name, i);
+                Grid.SetRow(gauges[i], i); Grid.SetColumn(gauges[i], 1);
+                gauges[i].Margin = new Thickness(0, 0, 8, 0);
+                reads[i] = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 12, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+                Grid.SetRow(reads[i], i); Grid.SetColumn(reads[i], 2);
+                gauges[i].Changed += delegate { GuardReadout(idx); guardDebounce.Stop(); guardDebounce.Start(); };
+                g.Children.Add(name); g.Children.Add(gauges[i]); g.Children.Add(reads[i]);
+            }
+            rCpu = reads[0]; rChassis = reads[1]; rFans = reads[2]; rHold = reads[3];
+            for (int i = 0; i < 4; i++) GuardReadout(i);
+            guardPanel.Children.Add(g);
+        }
+        void GuardReadout(int i) {
+            switch (i) {
+                case 0: rCpu.Text = (int)gCpu.Value + "\u00b0"; break;
+                case 1: rChassis.Text = (int)gChassis.Value + "\u00b0"; break;
+                case 2: rFans.Text = gFans.Value > E.P.Curve.Ceiling ? "Max" : E.Rpm((int)gFans.Value); break;
+                case 3: rHold.Text = HoldText((int)gHold.Value); break;
+            }
         }
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) {
             if (msg == WM_HOTKEY) {
@@ -2225,6 +2317,7 @@ namespace Ohman {
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
             else if (page == "hotkeys") { Navigate(Page.Settings, false); ToggleHotkeyPanel(); }   // settings, hotkey panel open (screenshot aid)
+            else if (page == "guard") { Navigate(Page.Settings, false); ToggleGuardPanel(); }
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);
@@ -2241,7 +2334,7 @@ namespace Ohman {
                     root.UpdateLayout();
                     // --page update / driver: the eased scroll never ran (no frames rendered off-screen), so put
                     // the row in view now that the page has its final layout.
-                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : null;
+                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : Program.StartPage == "guard" ? (FrameworkElement)guardPanel : null;
                     if (at != null && cur == Page.Settings) {
                         try {
                             var content = scroll.Content as FrameworkElement;

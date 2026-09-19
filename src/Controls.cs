@@ -89,6 +89,50 @@ namespace Ohman {
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { if (IsMouseCaptured) ReleaseMouseCapture(); }
     }
 
+    /// <summary>A limit on a strip of colour, the way the keyboard page picks a hue from one. The strip runs
+    /// cold to hot (or slow to fast), the handle is the limit and drags, and a small white marker is where the
+    /// machine is right now, so the distance between the two is the whole story at a glance.</summary>
+    sealed class Gauge : FrameworkElement {
+        public double Min, Max = 100, Value, Step = 1;
+        public double Live = double.NaN;                // the current reading, or NaN for none
+        public Color[] Stops = { Ui.Ok, Ui.Warn, Ui.Danger };
+        public event Action<double> Changed;
+        public Gauge() { Cursor = Cursors.Hand; }
+        protected override Size MeasureOverride(Size a) { return new Size(double.IsInfinity(a.Width) ? 160 : a.Width, 22); }
+        double X(double v) { return 9 + (Math.Max(Min, Math.Min(Max, v)) - Min) / (Max - Min) * (ActualWidth - 18); }
+        protected override void OnRender(DrawingContext dc) {
+            double w = ActualWidth, cy = ActualHeight / 2;
+            var g = new LinearGradientBrush();
+            for (int i = 0; i < Stops.Length; i++) g.GradientStops.Add(new GradientStop(Stops[i], i / (double)(Stops.Length - 1)));
+            g.Freeze();
+            // The strip is lit only up to the limit; past it is what the guard steps in for, shown dark.
+            double hx = X(Value);
+            dc.DrawRoundedRectangle(Ui.Sunken, null, new Rect(9, cy - 4, w - 18, 8), 4, 4);
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, hx, ActualHeight)));
+            dc.DrawRoundedRectangle(g, null, new Rect(9, cy - 4, w - 18, 8), 4, 4);
+            dc.Pop();
+            if (!double.IsNaN(Live)) {
+                double lx = X(Live);
+                dc.DrawEllipse(Ui.Brush(Color.FromArgb(70, 255, 255, 255)), null, new Point(lx, cy), 7, 7);
+                dc.DrawEllipse(Ui.TextHi, null, new Point(lx, cy), 3, 3);
+            }
+            dc.DrawEllipse(Ui.Card, new Pen(Ui.Brush(Ui.BalColor), 2.5), new Point(hx, cy), 7, 7);
+        }
+        void Pick(Point p) {
+            double t = Math.Max(0, Math.Min(1, (p.X - 9) / Math.Max(1, ActualWidth - 18)));
+            double v = Math.Round((Min + t * (Max - Min)) / Step) * Step;
+            if (v == Value) return;
+            Value = v;
+            InvalidateVisual();
+            var h = Changed;
+            if (h != null) h(v);
+        }
+        public void Repaint() { InvalidateVisual(); }
+        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { CaptureMouse(); Pick(e.GetPosition(this)); }
+        protected override void OnMouseMove(MouseEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed && IsMouseCaptured) Pick(e.GetPosition(this)); }
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { if (IsMouseCaptured) ReleaseMouseCapture(); }
+    }
+
     /// <summary>A filled segment: labels in a sunken box, the accent pill slides to the selected one.</summary>
     sealed class Seg : Border {
         public enum Kind { Page, Compact, Row }

@@ -46,10 +46,13 @@ namespace Ohman {
         /// <summary>Open the driver and load one module into it. Null with the reason when either step fails:
         /// the driver is not there, refuses us, or rejects the module (an unsigned one, or one for the wrong
         /// CPU vendor - main() in each module checks and answers STATUS_NOT_SUPPORTED).</summary>
-        public static PawnIoModule Load(string name, byte[] blob, out string why) {
+        public static PawnIoModule Load(string name, byte[] blob, out string why) { bool absent; return Load(name, blob, out why, out absent); }
+        /// <summary>deviceAbsent says which step failed: the device itself, or this module.</summary>
+        public static PawnIoModule Load(string name, byte[] blob, out string why, out bool deviceAbsent) {
             why = null;
+            deviceAbsent = false;
             SafeFileHandle h = CreateFile(@"\\?\GLOBALROOT\Device\PawnIO", 0xC0000000u /* GENERIC_READ|WRITE */, 3, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0x80, IntPtr.Zero);
-            if (h == null || h.IsInvalid) { why = "cannot open the PawnIO device (" + Win32(Marshal.GetLastWin32Error()) + ")"; return null; }
+            if (h == null || h.IsInvalid) { why = "cannot open the PawnIO device (" + Win32(Marshal.GetLastWin32Error()) + ")"; deviceAbsent = true; return null; }
             uint ret;
             if (!DeviceIoControl(h, IoctlLoad, blob, (uint)blob.Length, null, 0, out ret, IntPtr.Zero)) {
                 why = "the driver rejected the " + name + " module (" + Win32(Marshal.GetLastWin32Error()) + ")";
@@ -175,11 +178,8 @@ namespace Ohman {
             why = null;
             deviceAbsent = false;
             if (!Installed) { why = "not installed"; deviceAbsent = true; return null; }
-            try {
-                PawnIoModule m = PawnIoModule.Load(module, Module(module), out why);
-                if (m == null && why != null && why.StartsWith("cannot open", StringComparison.Ordinal)) deviceAbsent = true;
-                return m;
-            } catch (Exception ex) { why = ex.Message; return null; }
+            try { return PawnIoModule.Load(module, Module(module), out why, out deviceAbsent); }
+            catch (Exception ex) { why = ex.Message; return null; }
         }
 
         // ---------- installing ----------

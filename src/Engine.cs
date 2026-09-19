@@ -112,6 +112,7 @@ namespace Ohman {
         public bool Guard = true;                   // thermal guard: force max fan when the machine runs away
         public bool UpdateOnLaunch = true;          // ask GitHub for the latest release when Ohman starts (once a day)
         public string KeyCommand = "";              // KeyAction.Run: command line the OMEN key starts
+        public string[] HotkeyText = new string[HotkeyTable.Count];   // per action: null = default, "" = none, else "Ctrl+Alt+E"
         public bool DriverUse = true;               // use the PawnIO driver when it is installed
         public int FanCeilingSeen;                  // top fan level measured on this machine, 0 = not learned yet
         public bool DriverInstalledByOhman = false; // we put it there, so Uninstall may offer to take it away
@@ -155,6 +156,11 @@ namespace Ohman {
             try {
                 // per-mode keys: M0.Fan=… M1.TdpOffset=… (M0 Eco, M1 Balanced, M2 Performance)
                 if (k.Length > 3 && k[0] == 'M' && char.IsDigit(k[1]) && k[2] == '.') { int mi = k[1] - '0'; if (mi >= 0 && mi < 3) Modes[mi].Apply(k.Substring(3), v); return; }
+                if (k.StartsWith("Hotkey.", StringComparison.Ordinal)) {
+                    int hi = Array.IndexOf(HotkeyTable.Keys, k.Substring(7));
+                    if (hi >= 0) s.HotkeyText[hi] = v.Trim();
+                    return;
+                }
                 // un-prefixed keys apply to every mode (handy for hand edits and --set)
                 if (k == "Fan" || k == "Fan1" || k == "Fan2" || k == "TdpOffset" || k == "Gpu" || k == "GpuAuto" || k == "Curve") { foreach (var m in Modes) m.Apply(k, v); return; }
                 {
@@ -252,6 +258,7 @@ namespace Ohman {
                 sb.AppendLine("LowHzOnBattery=" + LowHzOnBattery);
                 sb.AppendLine("TrayTemp=" + TrayTemp);
                 sb.AppendLine("KeyCommand=" + KeyCommand);
+                for (int i = 0; i < HotkeyTable.Count; i++) if (HotkeyText[i] != null) sb.AppendLine("Hotkey." + HotkeyTable.Keys[i] + "=" + HotkeyText[i]);   // only what differs from the defaults
                 sb.AppendLine("Guard=" + Guard);
                 sb.AppendLine("UpdateOnLaunch=" + UpdateOnLaunch);
                 sb.AppendLine("DriverUse=" + DriverUse);
@@ -1227,6 +1234,27 @@ namespace Ohman {
         public void SetKey(KeyAction a) { S.Key = a; S.Save(); Changed(); }
         public void SetKeyCommand(string cmd) { S.KeyCommand = (cmd ?? "").Trim(); S.Save(); Changed(); }
         public void SetHotkeys(bool on) { S.Hotkeys = on; S.Save(); Changed(); }
+
+        // ---------- which keys ----------
+        public Hotkey GetHotkey(HotkeyAction a) {
+            string t = S.HotkeyText[(int)a];
+            if (t == null) return HotkeyTable.Defaults[(int)a];
+            Hotkey h;
+            return Hotkey.TryParse(t, out h) ? h : HotkeyTable.Defaults[(int)a];
+        }
+        public Hotkey[] GetHotkeys() { var r = new Hotkey[HotkeyTable.Count]; for (int i = 0; i < r.Length; i++) r[i] = GetHotkey((HotkeyAction)i); return r; }
+        public bool HotkeysCustomised { get { foreach (string t in S.HotkeyText) if (t != null) return true; return false; } }
+        /// <summary>Bind one action. A key already bound to another action is taken from it, since both are on
+        /// screen at the time and a shortcut cannot do two things. Back to default is stored as default.</summary>
+        public void SetHotkey(HotkeyAction a, Hotkey h) {
+            for (int i = 0; i < HotkeyTable.Count; i++)
+                if (i != (int)a && !h.IsEmpty && GetHotkey((HotkeyAction)i).Same(h)) S.HotkeyText[i] = HotkeyTable.Defaults[i].Same(Hotkey.None) ? null : "";
+            S.HotkeyText[(int)a] = h.Same(HotkeyTable.Defaults[(int)a]) ? null : h.ToString();
+            S.Save();
+            Changed();
+        }
+        public void ResetHotkeys() { for (int i = 0; i < HotkeyTable.Count; i++) S.HotkeyText[i] = null; S.Save(); Changed(); }
+        public void ToggleCurve() { SetFan(S.Fan == FanMode.Custom ? FanMode.Auto : FanMode.Custom, S.Fan1, S.Fan2, false); }
         public void SetEcoOnBattery(bool on) { S.EcoOnBattery = on; S.Save(); Changed(); }
         public void SetSyncWinPower(bool on) { S.SyncWinPower = on; S.Save(); if (on) SetWinPowerOverlay(ModeIndex); Changed(); }
         public void SetLowHzOnBattery(bool on) { S.LowHzOnBattery = on; S.Save(); Changed(); }

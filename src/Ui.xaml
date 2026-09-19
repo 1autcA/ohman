@@ -652,12 +652,15 @@
             </Border>
             <Border BorderBrush="{StaticResource Line2}" BorderThickness="0,1,0,0" Padding="0,14">
               <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
                   <TextBlock Text="Hotkeys" Style="{StaticResource Row}"/>
-                  <TextBlock Text="Shift+F11 cycles · Ctrl+Alt+E/B/P modes · Ctrl+Alt+M max fan · Ctrl+Alt+O panel" Style="{StaticResource RowSub}" FontFamily="{DynamicResource MonoFont}" FontSize="11"/>
+                  <TextBlock x:Name="TxtHotkeysSub" Style="{StaticResource RowSub}" FontFamily="{DynamicResource MonoFont}" FontSize="11"/>
                 </StackPanel>
-                <ToggleButton x:Name="TgHotkeys" Grid.Column="1" Style="{StaticResource Switch}"/>
+                <TextBlock x:Name="BtnHotkeys" Grid.Column="1" Style="{StaticResource Link}" Text="Customise" Margin="0,0,18,0"/>
+                <ToggleButton x:Name="TgHotkeys" Grid.Column="2" Style="{StaticResource Switch}"/>
+                <StackPanel x:Name="HotkeyPanel" Grid.Row="1" Grid.ColumnSpan="3" Visibility="Collapsed" Margin="0,12,0,0"/>
               </Grid>
             </Border>
 

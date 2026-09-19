@@ -124,6 +124,13 @@ namespace Ohman {
         TextBox txtKeyCmd;
         Ellipse keyDot;
         ToggleButton tgSuppress, tgHotkeys, tgAutostart, tgEcoBattery, tgSyncPower, tgLowHzBattery, tgTrayTemp, tgGuard, tgUpdateAuto;
+        // hotkeys
+        TextBlock btnHotkeys, txtHotkeysSub;
+        StackPanel hotkeyPanel;
+        bool hotkeysOpen;
+        int listening = -1;                                     // the action waiting for a key press, or -1
+        readonly bool[] hotkeyBusy = new bool[HotkeyTable.Count];   // Windows refused this one: another program has it
+        string hotkeySubFor = "?";
         TextBlock txtGuardSub, txtMaxCoolSub, txtKeyCmdHint;
         Button btnClose;
         Border toast;
@@ -363,6 +370,9 @@ namespace Ohman {
             txtGpuSub = F<TextBlock>("TxtGpuSub");
             tgSuppress = F<ToggleButton>("TgSuppress");
             tgHotkeys = F<ToggleButton>("TgHotkeys");
+            btnHotkeys = F<TextBlock>("BtnHotkeys");
+            txtHotkeysSub = F<TextBlock>("TxtHotkeysSub");
+            hotkeyPanel = F<StackPanel>("HotkeyPanel");
             tgEcoBattery = F<ToggleButton>("TgEcoBattery");
             tgLowHzBattery = F<ToggleButton>("TgLowHzBattery");
             tgSyncPower = F<ToggleButton>("TgSyncPower");
@@ -621,6 +631,8 @@ namespace Ohman {
             btnLearn.MouseLeftButtonUp += delegate { E.Learning = true; keyDot.Fill = Ui.Brush(Ui.Warn); txtKeyInfo.Text = "press the OMEN key now… (10 s)"; learnTimer.Stop(); learnTimer.Start(); };
 
             OnSwitch(tgHotkeys, delegate(bool on) { Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });
+            btnHotkeys.MouseLeftButtonUp += delegate { ToggleHotkeyPanel(); };
+            PreviewKeyDown += OnHotkeyCapture;
             OnSwitch(tgEcoBattery, delegate(bool on) { Bg(delegate { E.SetEcoOnBattery(on); }); });
             OnSwitch(tgSyncPower, delegate(bool on) { Bg(delegate { E.SetSyncWinPower(on); }); });
             OnSwitch(tgLowHzBattery, delegate(bool on) { Bg(delegate { E.SetLowHzOnBattery(on); }); });
@@ -1883,6 +1895,8 @@ namespace Ohman {
                 UpdateDriverRow();
                 tgSuppress.IsChecked = S.SuppressOgh;
                 tgHotkeys.IsChecked = S.Hotkeys;
+                string hk = HotkeyTable.Summary(E.GetHotkeys());
+                if (hk != hotkeySubFor) { hotkeySubFor = hk; txtHotkeysSub.Text = hk; if (hotkeysOpen) BuildHotkeyPanel(); }
                 tgEcoBattery.IsChecked = S.EcoOnBattery;
                 tgSyncPower.IsChecked = S.SyncWinPower;
                 tgAutostart.IsChecked = autostart;
@@ -2054,31 +2068,139 @@ namespace Ohman {
             try { int pref = 2; DwmSetWindowAttribute(hwnd, 33, ref pref, 4); int dark = 1; DwmSetWindowAttribute(hwnd, 20, ref dark, 4); int border = 0x0025282C; DwmSetWindowAttribute(hwnd, 34, ref border, 4); } catch { }
             if (E.S.Hotkeys) RegisterHotkeys();
         }
+        /// <summary>Every binding in the table, id = action + 1. One Windows refuses (another program holds it) is
+        /// remembered so the panel can say so next to it rather than the shortcut silently doing nothing.</summary>
         void RegisterHotkeys() {
             if (hotkeysRegistered) return;
             var h = new WindowInteropHelper(this).Handle;
             if (h == IntPtr.Zero) return;
-            RegisterHotKey(h, 1, MOD_CONTROL | MOD_ALT, (uint)'E');
-            RegisterHotKey(h, 2, MOD_CONTROL | MOD_ALT, (uint)'B');
-            RegisterHotKey(h, 3, MOD_CONTROL | MOD_ALT, (uint)'P');
-            RegisterHotKey(h, 4, MOD_CONTROL | MOD_ALT, (uint)'M');
-            RegisterHotKey(h, 5, MOD_CONTROL | MOD_ALT, (uint)'O');
-            if (!RegisterHotKey(h, 6, MOD_SHIFT, VK_F11)) Log.Write("hotkey Shift+F11 not available");   // next to the OMEN key: cycles modes
+            Hotkey[] b = E.GetHotkeys();
+            for (int i = 0; i < b.Length; i++) {
+                hotkeyBusy[i] = false;
+                if (b[i].IsEmpty) continue;
+                if (!RegisterHotKey(h, i + 1, b[i].Mods, b[i].Vk)) { hotkeyBusy[i] = true; Log.Write("hotkey " + b[i] + " (" + HotkeyTable.Names[i] + ") not available: another program has it"); }
+            }
             hotkeysRegistered = true;
         }
         void UnregisterHotkeys() {
             if (!hotkeysRegistered) return;
             var h = new WindowInteropHelper(this).Handle;
-            for (int i = 1; i <= 6; i++) UnregisterHotKey(h, i);
+            for (int i = 1; i <= HotkeyTable.Count; i++) UnregisterHotKey(h, i);
             hotkeysRegistered = false;
+        }
+
+        // ---------- customising them ----------
+        void ToggleHotkeyPanel() {
+            hotkeysOpen = !hotkeysOpen;
+            if (!hotkeysOpen) StopListening();
+            btnHotkeys.Text = hotkeysOpen ? "Done" : "Customise";
+            if (hotkeysOpen) BuildHotkeyPanel();
+            hotkeyPanel.Visibility = hotkeysOpen ? Visibility.Visible : Visibility.Collapsed;
+            Remeasure(cur);
+        }
+        /// <summary>One line per action: its name, its keys as key caps, and what is wrong with it if anything.
+        /// Rebuilt whole on every change; seven rows is nothing.</summary>
+        void BuildHotkeyPanel() {
+            hotkeyPanel.Children.Clear();
+            Hotkey[] b = E.GetHotkeys();
+            for (int i = 0; i < b.Length; i++) {
+                int idx = i;
+                var g = new Grid { Margin = new Thickness(0, 0, 0, 6), Cursor = Cursors.Hand, Background = Brushes.Transparent };
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var name = new TextBlock { Text = HotkeyTable.Names[i], FontFamily = Ui.UiFont, FontSize = 13, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center };
+                g.Children.Add(name);
+                var caps = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(caps, 1);
+                if (listening == i) {
+                    Border cap = KeyCap("Press keys…", accent);
+                    var pulse = new System.Windows.Media.Animation.DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(600)) { AutoReverse = true, RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever };
+                    cap.BeginAnimation(OpacityProperty, pulse);
+                    caps.Children.Add(cap);
+                } else if (b[i].IsEmpty) {
+                    caps.Children.Add(new TextBlock { Text = "none", FontFamily = Ui.UiFont, FontSize = 12, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center });
+                } else {
+                    string[] parts = b[i].Parts();
+                    for (int k = 0; k < parts.Length; k++) {
+                        if (k > 0) caps.Children.Add(new TextBlock { Text = "+", Foreground = Ui.Desc, FontSize = 11, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center });
+                        caps.Children.Add(KeyCap(parts[k], hotkeyBusy[i] ? Ui.Brush(Ui.Warn) : null));
+                    }
+                    if (hotkeyBusy[i]) caps.Children.Add(new TextBlock { Text = "in use", Foreground = Ui.Brush(Ui.Warn), FontFamily = Ui.UiFont, FontSize = 11, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "Another program has this shortcut, so it does nothing here. Click to pick a different one." });
+                }
+                g.Children.Add(caps);
+                g.MouseLeftButtonUp += delegate { StartListening(idx); };
+                hotkeyPanel.Children.Add(g);
+            }
+            var foot = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+            foot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            foot.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            foot.Children.Add(new TextBlock { Text = listening >= 0 ? "Esc keeps the old one, Backspace removes it" : "Click a shortcut, then press the keys you want", FontFamily = Ui.UiFont, FontSize = 12, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center });
+            if (E.HotkeysCustomised) {
+                var reset = new TextBlock { Text = "Reset all", FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(reset, 1);
+                reset.MouseLeftButtonUp += delegate { StopListening(); UnregisterHotkeys(); E.ResetHotkeys(); if (E.S.Hotkeys) RegisterHotkeys(); BuildHotkeyPanel(); };
+                foot.Children.Add(reset);
+            }
+            hotkeyPanel.Children.Add(foot);
+        }
+        Border KeyCap(string text, Brush fg) {
+            return new Border {
+                Background = Ui.Pill, CornerRadius = new CornerRadius(4), Padding = new Thickness(7, 2, 7, 2), Margin = new Thickness(0, 0, 4, 0),
+                BorderBrush = Ui.Line, BorderThickness = new Thickness(1),
+                Child = new TextBlock { Text = text, FontFamily = Ui.MonoFont, FontSize = 11, Foreground = fg ?? Ui.TextB }
+            };
+        }
+        /// <summary>Wait for the next key press and bind it. The global hotkeys come off while waiting, so the
+        /// combination being typed reaches this window rather than firing whatever it is bound to now.</summary>
+        void StartListening(int idx) {
+            listening = idx;
+            UnregisterHotkeys();
+            BuildHotkeyPanel();
+            Focus();
+        }
+        void StopListening() {
+            if (listening < 0) return;
+            listening = -1;
+            if (E.S.Hotkeys) RegisterHotkeys();
+            BuildHotkeyPanel();
+        }
+        void OnHotkeyCapture(object o, KeyEventArgs e) {
+            if (listening < 0) return;
+            e.Handled = true;
+            int idx = listening;
+            var action = (HotkeyAction)idx;
+            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key == Key.Escape) { StopListening(); return; }
+            if (key == Key.Back) { E.SetHotkey(action, Hotkey.None); StopListening(); return; }
+            Hotkey h;
+            if (!Hotkey.FromKey(key, Keyboard.Modifiers, out h)) return;          // a modifier on its own: keep waiting
+            if (!h.Valid) { ShowToast("Hold Ctrl, Alt, Shift or Win with it, or use an F-key", true); return; }
+            Hotkey before = E.GetHotkey(action);
+            E.SetHotkey(action, h);
+            listening = -1;
+            if (E.S.Hotkeys) RegisterHotkeys();
+            // Windows said no: another program owns that combination. The old binding comes back, and the
+            // toast says why nothing changed rather than leaving a shortcut on screen that does nothing.
+            if (hotkeyBusy[idx]) {
+                UnregisterHotkeys();
+                E.SetHotkey(action, before);
+                if (E.S.Hotkeys) RegisterHotkeys();
+                ShowToast(h + " is already used by another program", true);
+            }
+            BuildHotkeyPanel();
         }
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) {
             if (msg == WM_HOTKEY) {
-                int id = wp.ToInt32();
-                if (id >= 1 && id <= 3) { Flash(Engine.ModeNames[id - 1] + " mode", ModeSubs[id - 1], id - 1); ApplyModeAsync(id - 1); }
-                else if (id == 4) ToggleMaxWithFlash();
-                else if (id == 5) TogglePanel();
-                else if (id == 6) CycleWithFlash();
+                int id = wp.ToInt32() - 1;
+                if (id >= 0 && id <= 2) { Flash(Engine.ModeNames[id] + " mode", ModeSubs[id], id); ApplyModeAsync(id); }
+                else if (id == (int)HotkeyAction.MaxFan) ToggleMaxWithFlash();
+                else if (id == (int)HotkeyAction.Panel) TogglePanel();
+                else if (id == (int)HotkeyAction.Cycle) CycleWithFlash();
+                else if (id == (int)HotkeyAction.Curve) {
+                    bool custom = E.S.Fan != FanMode.Custom;
+                    Flash(custom ? "Your fan curve" : "Fans auto", custom ? "Fans follow the curve you drew" : "Back to the firmware curve", -1);
+                    Bg(delegate { E.ToggleCurve(); });
+                }
                 handled = true;
             }
             return IntPtr.Zero;
@@ -2093,6 +2215,7 @@ namespace Ohman {
             else if (page == "settings") Navigate(Page.Settings, false);
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
+            else if (page == "hotkeys") { Navigate(Page.Settings, false); ToggleHotkeyPanel(); }   // settings, hotkey panel open (screenshot aid)
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);
@@ -2109,7 +2232,7 @@ namespace Ohman {
                     root.UpdateLayout();
                     // --page update / driver: the eased scroll never ran (no frames rendered off-screen), so put
                     // the row in view now that the page has its final layout.
-                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : null;
+                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : null;
                     if (at != null && cur == Page.Settings) {
                         try {
                             var content = scroll.Content as FrameworkElement;

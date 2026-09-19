@@ -658,7 +658,7 @@
                   <TextBlock Text="Hotkeys" Style="{StaticResource Row}"/>
                   <TextBlock x:Name="TxtHotkeysSub" Style="{StaticResource RowSub}" FontFamily="{DynamicResource MonoFont}" FontSize="11"/>
                 </StackPanel>
-                <Button x:Name="BtnHotkeys" Grid.Column="1" Style="{StaticResource IconBtn}" Content="&#xE70F;" FontSize="12" Foreground="{StaticResource Accent}" Margin="0,0,14,0" ToolTip="Change the shortcuts: click one, then press the keys you want. Esc keeps the old one, Backspace removes it."/>
+                <Button x:Name="BtnHotkeys" Grid.Column="1" Style="{StaticResource IconBtn}" Width="24" Height="24" Margin="0,0,12,0" ToolTip="Change the shortcuts: click one, then press the keys you want. Esc keeps the old one, Backspace removes it."/>
                 <ToggleButton x:Name="TgHotkeys" Grid.Column="2" Style="{StaticResource Switch}"/>
                 <StackPanel x:Name="HotkeyPanel" Grid.Row="1" Grid.ColumnSpan="3" Visibility="Collapsed" Margin="0,8,0,-4"/>
               </Grid>

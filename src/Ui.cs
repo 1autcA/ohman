@@ -633,6 +633,7 @@ namespace Ohman {
 
             OnSwitch(tgHotkeys, delegate(bool on) { Bg(delegate { E.SetHotkeys(on); }); if (on) RegisterHotkeys(); else UnregisterHotkeys(); });
             btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
+            btnHotkeys.Content = HotkeyGlyph(false);
             PreviewKeyDown += OnHotkeyCapture;
             OnSwitch(tgEcoBattery, delegate(bool on) { Bg(delegate { E.SetEcoOnBattery(on); }); });
             OnSwitch(tgSyncPower, delegate(bool on) { Bg(delegate { E.SetSyncWinPower(on); }); });
@@ -2091,11 +2092,18 @@ namespace Ohman {
         }
 
         // ---------- customising them ----------
+        /// <summary>A filled pencil to open and a tick to close, drawn rather than typed: the icon font's pencil is
+        /// a hairline at this size and reads as a scratch on the row.</summary>
+        static System.Windows.Shapes.Path HotkeyGlyph(bool open) {
+            const string pencil = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
+            const string tick = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z";
+            return new System.Windows.Shapes.Path { Data = Geometry.Parse(open ? tick : pencil), Fill = Ui.Brush(Ui.BalColor), Width = 14, Height = 14, Stretch = Stretch.Uniform };
+        }
         void ToggleHotkeyPanel() {
             hotkeysOpen = !hotkeysOpen;
             if (!hotkeysOpen) StopListening();
             // A pencil to open, a tick to close: the same spot, one glyph, no words to wrap the sub-line around.
-            btnHotkeys.Content = hotkeysOpen ? "" : "";
+            btnHotkeys.Content = HotkeyGlyph(hotkeysOpen);
             btnHotkeys.ToolTip = hotkeysOpen ? "Done" : "Change the shortcuts: click one, then press the keys you want. Esc keeps the old one, Backspace removes it.";
             txtHotkeysSub.Visibility = hotkeysOpen ? Visibility.Collapsed : Visibility.Visible;   // the panel is the sub-line, in full
             if (hotkeysOpen) BuildHotkeyPanel();
@@ -2109,15 +2117,15 @@ namespace Ohman {
             hotkeyPanel.Children.Clear();
             Hotkey[] b = E.GetHotkeys();
             var g = new Grid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(118) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             for (int r = 0; r < b.Length; r++) g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(26) });
+            if (E.HotkeysCustomised) g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(26) });
             for (int i = 0; i < b.Length; i++) {
                 int idx = i;
                 var name = new TextBlock { Text = HotkeyTable.Names[i], FontFamily = Ui.UiFont, FontSize = 13, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand };
                 Grid.SetRow(name, i);
-                var cell = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand, Background = Brushes.Transparent };
+                var cell = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Cursor = Cursors.Hand, Background = Brushes.Transparent };
                 Grid.SetRow(cell, i); Grid.SetColumn(cell, 1);
                 if (listening == i) {
                     Border cap = KeyCap("Press keys…", accent);
@@ -2138,7 +2146,7 @@ namespace Ohman {
             }
             if (E.HotkeysCustomised) {
                 var reset = new TextBlock { Text = "Reset all", FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-                Grid.SetRow(reset, b.Length - 1); Grid.SetColumn(reset, 2);
+                Grid.SetRow(reset, b.Length); Grid.SetColumn(reset, 1);
                 reset.MouseLeftButtonUp += delegate { StopListening(); UnregisterHotkeys(); E.ResetHotkeys(); if (E.S.Hotkeys) RegisterHotkeys(); BuildHotkeyPanel(); };
                 g.Children.Add(reset);
             }
@@ -2146,7 +2154,7 @@ namespace Ohman {
         }
         Border KeyCap(string text, Brush fg) {
             return new Border {
-                Background = Ui.Pill, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 2, 6, 2), Margin = new Thickness(0, 0, 4, 0),
+                Background = Ui.Pill, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 2, 6, 2), Margin = new Thickness(0),
                 BorderBrush = Ui.Line, BorderThickness = new Thickness(1),
                 Child = new TextBlock { Text = text, FontFamily = Ui.MonoFont, FontSize = 11, Foreground = fg ?? Ui.TextB }
             };

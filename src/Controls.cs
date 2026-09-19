@@ -89,78 +89,43 @@ namespace Ohman {
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { if (IsMouseCaptured) ReleaseMouseCapture(); }
     }
 
-    /// <summary>A number in a sentence. Scroll on it or drag it up and down to change it; the tooltip says what
-    /// the reading is right now, so the margin is one hover away. Looks like a key cap, because it is one.</summary>
-    sealed class NumChip : Border {
-        public int Min, Max = 100, Step = 1;
-        public string Suffix = "";
-        public event Action<int> Changed;
-        int value;
-        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi, VerticalAlignment = VerticalAlignment.Center };
-        Point down; int downValue; bool dragging;
-        public NumChip() {
-            Background = Ui.Pill; BorderBrush = Ui.Line; BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
-            Padding = new Thickness(6, 2, 4, 2); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.SizeNS;
-            VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true;
-            // A stacked pair of arrows says "this moves" without a word; the top half of the chip steps up, the bottom down.
-            var arrows = new StackPanel { Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            arrows.Children.Add(new TextBlock { Text = "▴", FontSize = 7, Foreground = Ui.Sub, Margin = new Thickness(0, -1, 0, -2) });
-            arrows.Children.Add(new TextBlock { Text = "▾", FontSize = 7, Foreground = Ui.Sub, Margin = new Thickness(0, -2, 0, -1) });
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(text); row.Children.Add(arrows);
-            Child = row;
-        }
-        public int Value { get { return value; } set { value = Math.Max(Min, Math.Min(Max, value)); text.Text = value + Suffix; } }
-        void Set(int v, bool fire) { int was = value; Value = v; if (fire && value != was) { var h = Changed; if (h != null) h(value); } }
-        protected override void OnMouseWheel(MouseWheelEventArgs e) { Set(value + (e.Delta > 0 ? Step : -Step), true); e.Handled = true; }
-        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { down = e.GetPosition(this); downValue = value; dragging = true; CaptureMouse(); }
-        protected override void OnMouseMove(MouseEventArgs e) {
-            if (!dragging) return;
-            double dy = down.Y - e.GetPosition(this).Y;                  // up is more
-            Set(downValue + (int)Math.Round(dy / 6) * Step, true);
-        }
-        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) {
-            bool moved = dragging && Math.Abs(down.Y - e.GetPosition(this).Y) > 3;
-            dragging = false; if (IsMouseCaptured) ReleaseMouseCapture();
-            if (!moved) Set(value + (e.GetPosition(this).Y < ActualHeight / 2 ? Step : -Step), true);   // a click: top half up, bottom half down
-        }
-    }
-
-    /// <summary>A choice in a sentence: the current one as a cap with a small arrow, and a list under it on click.
-    /// Scrolling on it steps through the list without opening it.</summary>
-    sealed class PickChip : Border {
+    /// <summary>A value inside a sentence, the way a rule reads in a filter or a smart folder: the words are the
+    /// caption and the value is a coloured word that opens a list on click. One font, no box, no arrows, and every
+    /// value on the line behaves the same way, so nothing needs a hint.</summary>
+    sealed class ValueLink : Border {
         public string[] Items = new string[0];
         public event Action<int> Changed;
         int index;
-        readonly TextBlock text = new TextBlock { FontFamily = Ui.MonoFont, FontSize = 11, Foreground = Ui.TextHi, VerticalAlignment = VerticalAlignment.Center };
-        readonly System.Windows.Controls.Primitives.Popup popup = new System.Windows.Controls.Primitives.Popup { StaysOpen = false, AllowsTransparency = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 4 };
-        public PickChip() {
-            Background = Ui.Pill; BorderBrush = Ui.Line; BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
-            Padding = new Thickness(6, 2, 4, 2); Margin = new Thickness(3, 0, 3, 0); Cursor = Cursors.Hand;
-            VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true;
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(text);
-            row.Children.Add(new TextBlock { Text = "\u25BE", FontSize = 9, Foreground = Ui.Sub, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
-            Child = row;
+        readonly TextBlock text = new TextBlock { FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = Ui.Brush(Ui.BalColor), VerticalAlignment = VerticalAlignment.Center };
+        readonly System.Windows.Controls.Primitives.Popup popup = new System.Windows.Controls.Primitives.Popup { StaysOpen = false, AllowsTransparency = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 2 };
+        public ValueLink() {
+            Background = Brushes.Transparent; CornerRadius = new CornerRadius(4); Padding = new Thickness(4, 1, 4, 1); Margin = new Thickness(1, 0, 1, 0);
+            Cursor = Cursors.Hand; VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true; Child = text;
             popup.PlacementTarget = this;
+            MouseEnter += delegate { Background = Ui.Pill; };
+            MouseLeave += delegate { if (!popup.IsOpen) Background = Brushes.Transparent; };
+            popup.Closed += delegate { Background = IsMouseOver ? Ui.Pill : Brushes.Transparent; };
         }
         public int Index { get { return index; } set { index = Math.Max(0, Math.Min(Items.Length - 1, value)); text.Text = Items.Length > 0 ? Items[index] : ""; } }
-        void Set(int i, bool fire) { int was = index; Index = i; if (fire && index != was) { var h = Changed; if (h != null) h(index); } }
-        protected override void OnMouseWheel(MouseWheelEventArgs e) { Set(index + (e.Delta > 0 ? -1 : 1), true); e.Handled = true; }
+        void Set(int i) { int was = index; Index = i; if (index != was) { var h = Changed; if (h != null) h(index); } }
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) {
             var list = new StackPanel();
+            Border current = null;
             for (int i = 0; i < Items.Length; i++) {
                 int idx = i;
-                var item = new Border { Background = i == index ? Ui.Pill : Brushes.Transparent, Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand,
-                    Child = new TextBlock { Text = Items[i], FontFamily = Ui.MonoFont, FontSize = 11, Foreground = i == index ? Ui.TextHi : Ui.TextB } };
+                var item = new Border { Background = i == index ? Ui.Pill : Brushes.Transparent, CornerRadius = new CornerRadius(4), Padding = new Thickness(12, 5, 24, 5), Cursor = Cursors.Hand,
+                    Child = new TextBlock { Text = Items[i], FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = i == index ? Ui.TextHi : Ui.TextB } };
                 item.MouseEnter += delegate { item.Background = Ui.Pill; };
                 item.MouseLeave += delegate { item.Background = idx == index ? Ui.Pill : Brushes.Transparent; };
-                item.MouseLeftButtonUp += delegate { popup.IsOpen = false; Set(idx, true); };
+                item.MouseLeftButtonUp += delegate { popup.IsOpen = false; Set(idx); };
                 list.Children.Add(item);
+                if (i == index) current = item;
             }
-            popup.Child = new Border { Background = Ui.Card, BorderBrush = Ui.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Padding = new Thickness(4), Child = list,
-                Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 4, Opacity = 0.5 } };
+            var scroll = new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 200 };
+            popup.Child = new Border { Background = Ui.Card, BorderBrush = Ui.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Padding = new Thickness(4), Child = scroll,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Opacity = 0.55 } };
             popup.IsOpen = true;
+            if (current != null) current.BringIntoView();
         }
     }
 

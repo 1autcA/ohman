@@ -2326,6 +2326,7 @@ namespace Ohman {
             else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
             else if (page == "hotkeys") { Navigate(Page.Settings, false); ToggleHotkeyPanel(); }   // settings, hotkey panel open (screenshot aid)
             else if (page == "guard") { Navigate(Page.Settings, false); btnGuard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+            else if (page == "guardrow") Navigate(Page.Settings, false);      // the row closed, for screenshots
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);
             if (Program.FlashTest) Flash("Performance mode", ModeSubs[2], 2);
@@ -2342,7 +2343,7 @@ namespace Ohman {
                     root.UpdateLayout();
                     // --page update / driver: the eased scroll never ran (no frames rendered off-screen), so put
                     // the row in view now that the page has its final layout.
-                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : Program.StartPage == "guard" ? (FrameworkElement)guardLine : null;
+                    FrameworkElement at = Program.StartPage == "driver" ? driverRow : Program.StartPage == "update" ? updateRow : Program.StartPage == "hotkeys" ? (FrameworkElement)hotkeyPanel : Program.StartPage == "guard" || Program.StartPage == "guardrow" ? (FrameworkElement)txtGuardSub.Parent : null;
                     if (at != null && cur == Page.Settings) {
                         try {
                             var content = scroll.Content as FrameworkElement;

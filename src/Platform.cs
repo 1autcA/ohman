@@ -44,10 +44,14 @@ namespace Ohman {
     /// <summary>When to stop trusting the curve and force the fans, and when it is safe to stop forcing them. The
     /// chassis numbers belong to this board's 0x23 sensor, so they are model data like the curve itself.</summary>
     public sealed class GuardLimits {
-        public int CpuHot = 90, ChassisHot = 56;        // engage at or above either
-        public int CpuSafe = 78, ChassisSafe = 48;      // release after SafeSeconds below both
+        // Raised from 90/56 engage and 78/48 release after owners reported it firing on machines that were
+        // merely working. These are a backstop for a fan that has stopped or a chassis with nowhere to put its
+        // heat, not a second opinion on the firmware's own curve, which already holds the silicon well below
+        // anything dangerous. 95 is still fifteen under the TjMax every part we have seen reports.
+        public int CpuHot = 95, ChassisHot = 62;        // engage at or above either
+        public int CpuSafe = 85, ChassisSafe = 54;      // release after SafeSeconds below both
         public int SafeSeconds = 60;
-        public int StallCpu = 70, StallLevelSum = 10;   // warm, but both fans reading under ~500 rpm
+        public int StallCpu = 75, StallLevelSum = 10;   // warm, but both fans reading under ~500 rpm
         public int MaxFanCoolBelow = 60, MaxFanCoolSeconds = 120;   // when a max-fan session hands itself back
         public int WarnAt = 80;                         // the amber temperature on the Home page
     }
@@ -269,7 +273,7 @@ namespace Ohman {
         /// widens the thermal guard: it lets the chassis sensor arm a trigger before the sensor has read cool
         /// once, and makes release stricter, so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
         static readonly string[] OwnerReported = { "8748", "8EEC", "8DCF", "88D2", "88EE", "8BAB", "8A26",
-                                                   "8BCD", "8BAD", "8787", "8E10", "8BBE", "8A4C", "8BB3", "8BCA", "8BD5", "8BC2" };
+                                                   "8BCD", "8BAD", "8787", "8E10", "8BBE", "8A4C", "8BB3", "8BCA", "8BD5", "8BC2", "8E35" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }
 
         public static string BoardOverride;         // --board: test aid

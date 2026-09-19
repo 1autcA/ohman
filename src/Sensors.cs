@@ -12,7 +12,6 @@ namespace Ohman {
 
     public sealed class SensorSnapshot {
         public double CpuTemp = double.NaN, CpuLoad = double.NaN, CpuMhz = double.NaN, CpuWatts = double.NaN;
-        public bool MhzFromDriver;
         public double AcpiTemp = double.NaN;              // the hottest ACPI zone, kept beside CpuTemp when the driver supplies that
         public double CpuTempNow = double.NaN;            // the single reading behind CpuTemp, before the median; for the report
         public bool CpuFromDriver;                        // CpuTemp is the package sensor read through the driver
@@ -170,12 +169,19 @@ namespace Ohman {
                     }
                     // The CPU's own answer wins. The counter above is a sampled estimate of the same ratio and
                     // was the number owners kept reporting as wrong.
-                    if (!double.IsNaN(driverMhz)) { s.CpuMhz = driverMhz; s.MhzFromDriver = true;
-                    }
+                    if (!double.IsNaN(driverMhz)) s.CpuMhz = driverMhz;
                 } catch { }
                 // Package power from the energy counter the driver reads, when there is one: the same RAPL
                 // figure the Energy Meter counter reports, without the counter's missed-window spikes.
-                try { if (!double.IsNaN(driverWatts)) s.CpuWatts = Watts(driverWatts); else if (cpuPower != null) s.CpuWatts = Watts(cpuPower.NextValue() / 1000.0); } catch { }
+                // Which source is feeding the median matters: RAPL through the driver and the Energy Meter
+                // counter are the same quantity but not the same numbers, and ranking one against the other
+                // after a switch reports a figure neither of them produced.
+                try {
+                    bool fromDriver = !double.IsNaN(driverWatts);
+                    if (fromDriver != wattsFromDriver) { wattsFromDriver = fromDriver; recentWattsCount = 0; }
+                    if (fromDriver) s.CpuWatts = Watts(driverWatts);
+                    else if (cpuPower != null) s.CpuWatts = Watts(cpuPower.NextValue() / 1000.0);
+                } catch { }
                 try {
                     var ps = System.Windows.Forms.SystemInformation.PowerStatus;
                     s.OnBattery = ps.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline;
@@ -230,6 +236,7 @@ namespace Ohman {
         static readonly double WattsCeiling = 200;
         readonly double[] recentWatts = new double[3];
         int recentWattsCount;
+        bool wattsFromDriver;
         // Median of three, the same thing the die temperature does, instead of the running average this used to
         // keep. The average only rejected spikes above 60 W, so at idle a 25 W burst went straight in and then
         // decayed slowly, and the figure on screen sat well above what the machine was really drawing. A median

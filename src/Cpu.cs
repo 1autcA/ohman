@@ -46,7 +46,18 @@ namespace Ohman {
         /// <summary>One reading. Serialised: the sensor loop polls every couple of seconds and the driver check
         /// polls eighty times in two, and the energy counter is a difference against the last call, so two
         /// callers sharing an instance would take each other's measurement window.</summary>
-        public CpuTelemetry Poll() { lock (sync) return PollCore(); }
+        public CpuTelemetry Poll() { return Poll(true); }
+        /// <summary>withClock false leaves the clock alone. Reading it pins the caller to core 0, and the driver
+        /// report samples this eighty times in two seconds to characterise the die sensor: pinning every one of
+        /// those samples would measure one core through an affinity change rather than the sensor free-running,
+        /// which is the observer effect that section exists to rule out.</summary>
+        public CpuTelemetry Poll(bool withClock) {
+            lock (sync) {
+                skipClock = !withClock;
+                try { return PollCore(); } finally { skipClock = false; }
+            }
+        }
+        bool skipClock;
 
         public virtual void Dispose() { if (Module != null) Module.Dispose(); }
 
@@ -67,14 +78,16 @@ namespace Ohman {
         /// reads are pinned to core 0 for that reason, and the result is that core's clock rather than a package
         /// average, which is the same thing the Windows counter approximates.</summary>
         protected double Clock() {
-            if (BaseMhz <= 0) return double.NaN;
+            if (BaseMhz <= 0 || skipClock) return double.NaN;
             ulong a = 0, m = 0;      // && short-circuits, so the second may never be written
             bool ok;
             IntPtr prev = IntPtr.Zero;
             Thread.BeginThreadAffinity();
             try {
                 prev = SetThreadAffinityMask(GetCurrentThread(), (IntPtr)1);
-                ok = Msr(IA32_APERF, out a) && Msr(IA32_MPERF, out m);
+                // Zero means the mask was refused, and an unpinned pair can difference one core's counter
+                // against another's for a ratio that looks entirely plausible. No reading beats a wrong one.
+                ok = prev != IntPtr.Zero && Msr(IA32_APERF, out a) && Msr(IA32_MPERF, out m);
             } finally {
                 if (prev != IntPtr.Zero) SetThreadAffinityMask(GetCurrentThread(), prev);
                 Thread.EndThreadAffinity();
@@ -160,6 +173,7 @@ namespace Ohman {
         const uint MSR_RAPL_POWER_UNIT = 0x606, MSR_PKG_POWER_LIMIT = 0x610, MSR_PKG_ENERGY_STATUS = 0x611;
         const uint MSR_PLATFORM_INFO = 0xCE;
         int tjMax;
+        bool baseTried;
         double powerUnit;
         public IntelCpu(PawnIoModule module) : base(module) { }
         public override string Describe { get { return "Intel MSR" + (tjMax > 0 ? " · TjMax " + tjMax : ""); } }
@@ -191,7 +205,8 @@ namespace Ohman {
             if (EnergyUnit > 0 && Msr(MSR_PKG_ENERGY_STATUS, out v)) t.Watts = Power(v & 0xFFFFFFFFu);
             // Bits 15:8 are the max non-turbo ratio, times the 100 MHz bus clock every part since Sandy Bridge
             // uses. Read once; it does not change.
-            if (BaseMhz == 0) {
+            if (!baseTried) {
+                baseTried = true;
                 if (Msr(MSR_PLATFORM_INFO, out v)) BaseMhz = ((v >> 8) & 0xFF) * 100.0;
                 if (BaseMhz <= 0) BaseMhz = NominalMhz();
             }
@@ -205,6 +220,7 @@ namespace Ohman {
     sealed class AmdCpu : CpuRegisters {
         const uint THM_TCON_CUR_TMP = 0x00059800;
         const uint MSR_PWR_UNIT = 0xC0010299, MSR_PKG_ENERGY_STAT = 0xC001029B;
+        bool baseTried;
         readonly Mutex pci;                 // the SMN goes through PCI config space, which every tool serialises on this name
         public AmdCpu(PawnIoModule module) : base(module) { try { pci = new Mutex(false, @"Global\Access_PCI"); } catch { } }
         public override string Describe { get { return "AMD SMN + MSR"; } }
@@ -234,7 +250,7 @@ namespace Ohman {
             if (EnergyUnit == 0 && Msr(MSR_PWR_UNIT, out v)) EnergyUnit = 1.0 / (1 << (int)((v >> 8) & 0x1F));
             if (EnergyUnit > 0 && Msr(MSR_PKG_ENERGY_STAT, out v)) t.Watts = Power(v & 0xFFFFFFFFu);
             // No equivalent of Intel's platform-info register here, so the kernel's nominal figure it is.
-            if (BaseMhz == 0) BaseMhz = NominalMhz();
+            if (!baseTried) { baseTried = true; BaseMhz = NominalMhz(); }
             t.Mhz = Clock();
             return t;
         }

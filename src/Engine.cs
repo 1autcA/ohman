@@ -718,12 +718,20 @@ namespace Ohman {
         /// differs is the curve underneath. A generic board is running the Transcend 14's curve on loan and wants
         /// it stretched to its own range; a verified board's curve is already its own, and stretching it would
         /// walk it away from the table it was checked against, so there only the ceiling moves.</summary>
+        int pristineCeiling;
         void ApplyMeasuredCeiling() {
-            if (P == null || P.Curve == null || S.FanCeilingSeen <= P.Curve.Floor + 5) return;
+            if (P == null || P.Curve == null) return;
+            // The verified profiles are one shared static instance, so a ceiling written straight onto it
+            // outlives the setting that asked for it: Reset clears FanCeilingSeen and the next Init would
+            // otherwise keep the old number with nothing on disk saying so. Remember the profile's own value
+            // and always derive from it, so the measurement can be taken back as well as applied.
+            if (pristineCeiling == 0) pristineCeiling = P.Curve.Ceiling;
+            int want = S.FanCeilingSeen > P.Curve.Floor + CeilingUsableRange ? S.FanCeilingSeen : pristineCeiling;
             int was = P.Curve.Ceiling;
-            if (S.FanCeilingSeen == was) return;
-            if (Generic) P.Curve.Rescale(S.FanCeilingSeen); else P.Curve.Ceiling = S.FanCeilingSeen;
-            Log.Write("fan ceiling " + was + " -> " + P.Curve.Ceiling + ", measured on this machine"
+            if (want == was) return;
+            if (Generic) P.Curve.Rescale(want); else P.Curve.Ceiling = want;
+            Log.Write("fan ceiling " + was + " -> " + P.Curve.Ceiling
+                + (want == pristineCeiling ? ", back to the profile's own" : ", measured on this machine")
                 + (Generic ? " (curve rescaled with it)" : ""));
         }
 
@@ -734,11 +742,21 @@ namespace Ohman {
         // Falling short of it only means they did not get there this time, which a stuck fan or a cold room also
         // explains, so that direction has to clear a gap noise cannot.
         const int CeilingOver = 2, CeilingShort = 10;
+        // Rescale stretches the level tables but never moves Floor, so a ceiling close to it would leave the
+        // curve, the sliders and the whole fan page with a handful of levels between them. Below this it is a
+        // misread unit or a stuck fan, not a ceiling.
+        const int CeilingUsableRange = 15;
+        readonly object ceilingSync = new object();
         /// <summary>One fan reading, from wherever Ohman happened to take it. Applied at the next start rather
         /// than now: the sliders take their range once, before anything is wired to them, because changing a
         /// Maximum coerces the Value under it and that would read as the owner moving the slider.</summary>
         public void NoteFanLevels(int[] f) {
             if (f == null || f.Length < 2 || P == null || P.Curve == null) return;
+            // The UI sensor poll and the guard timer both land here, and the counters below are a sequence, not
+            // one value: interleaved they lose increments and reset each other mid-test.
+            lock (ceilingSync) NoteFanLevelsCore(f);
+        }
+        void NoteFanLevelsCore(int[] f) {
             int seen = Math.Max(f[0], f[1]);
             if (seen <= 0 || seen > 255) return;
             // Only while asking for everything. Any lower and a low reading says nothing about the limit.
@@ -751,7 +769,7 @@ namespace Ohman {
             int real = ceilingHighWater;
             int gap = real - P.Curve.Ceiling;
             if (gap < CeilingOver && gap > -CeilingShort) return;
-            if (real <= P.Curve.Floor + 5 || real == S.FanCeilingSeen) return;
+            if (real <= P.Curve.Floor + CeilingUsableRange || real == S.FanCeilingSeen) return;
             S.FanCeilingSeen = real;
             S.Save();
             Log.Write("fan ceiling learned: asked for " + P.Curve.Ceiling + " and these fans never went past " + real
@@ -1227,6 +1245,9 @@ namespace Ohman {
             if (!BiosOk || Hw.IsDemo || ReadOnly) return;      // read-only boards: nothing to force, the firmware's own limits apply
             if (!S.Guard) {
                 if (GuardActive) { GuardActive = false; guardSafeSince = DateTime.MinValue; curLevel1 = curLevel2 = -1; lock (applySync) { ApplyFanCore(); lastFanWrite = DateTime.Now; } Changed(); }
+                // Still read the fans. This is the only tick that runs with the window closed, and somebody
+                // running Ohman in the tray with the guard switched off has to be able to learn a ceiling too.
+                try { int[] idle; lock (applySync) idle = Hw.GetFanLevels(); NoteFanLevels(idle); } catch { }
                 return;
             }
             try {

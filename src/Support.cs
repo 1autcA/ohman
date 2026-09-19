@@ -218,7 +218,7 @@ namespace Ohman {
                 var series = new List<int>();
                 DateTime until = DateTime.UtcNow.AddSeconds(2);
                 while (DateTime.UtcNow < until) {
-                    try { CpuTelemetry s2 = e.Cpu.Poll(); if (!double.IsNaN(s2.DieTemp)) series.Add((int)Math.Round(s2.DieTemp)); } catch { break; }
+                    try { CpuTelemetry s2 = e.Cpu.Poll(false); if (!double.IsNaN(s2.DieTemp)) series.Add((int)Math.Round(s2.DieTemp)); } catch { break; }
                     System.Threading.Thread.Sleep(25);
                 }
                 System.Threading.Thread.Sleep(600);      // the energy counter needs a window it can divide by

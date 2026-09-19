@@ -105,7 +105,8 @@ namespace Ohman {
         }
         readonly System.Windows.Controls.Primitives.Popup popup = new System.Windows.Controls.Primitives.Popup { StaysOpen = false, AllowsTransparency = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 2 };
         public ValueLink() {
-            Background = Brushes.Transparent; CornerRadius = new CornerRadius(4); Padding = new Thickness(4, 1, 4, 1); Margin = new Thickness(1, 0, 1, 0);
+            // The hover pill pads the word by 4; a negative margin keeps the text itself on the line's left edge.
+            Background = Brushes.Transparent; CornerRadius = new CornerRadius(4); Padding = new Thickness(4, 1, 4, 1); Margin = new Thickness(-4, 0, 0, 0);
             Cursor = Cursors.Arrow; VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true; Child = text;
             popup.PlacementTarget = this;
             MouseEnter += delegate { if (editable) Background = Ui.Pill; };

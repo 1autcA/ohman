@@ -2258,7 +2258,7 @@ namespace Ohman {
 
         // ---------- the thermal guard's rule, as a sentence ----------
         static string HoldText(int s) { return s % 60 == 0 && s >= 60 ? (s / 60) + " min" : s + " s"; }
-        static TextBlock Word(string t) { return new TextBlock { Text = t, FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center }; }
+        static TextBlock Word(string t) { return new TextBlock { Text = t, FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) }; }
         static StackPanel Phrase(string words, UIElement value) { var p = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 4, 0) }; p.Children.Add(Word(words)); p.Children.Add(value); return p; }
         static string[] Degrees(int lo, int hi) { var r = new string[hi - lo + 1]; for (int i = 0; i < r.Length; i++) r[i] = (lo + i) + "\u00b0"; return r; }
         /// <summary>"When CPU [95°] or chassis [62°], turn fans [Max] for (dial) 1 min". The words are the sub-line's
@@ -2285,11 +2285,15 @@ namespace Ohman {
             chipChassis.Changed += delegate { changed(); };
             chipFans.Changed += delegate { changed(); };
             chipHold.Changed += delegate { changed(); };
-            // Phrases wrap as units, so a line never ends on "for" with its value orphaned underneath.
-            guardLine.Children.Add(Phrase("When CPU", chipCpu));
-            guardLine.Children.Add(Phrase("or chassis", chipChassis));
-            guardLine.Children.Add(Phrase("turn fans", chipFans));
-            guardLine.Children.Add(Phrase("for", chipHold));
+            // Word by word, so the line runs up to the pencil before it breaks.
+            foreach (string w in "When CPU".Split(' ')) guardLine.Children.Add(Word(w));
+            guardLine.Children.Add(chipCpu);
+            foreach (string w in "or chassis".Split(' ')) guardLine.Children.Add(Word(w));
+            guardLine.Children.Add(chipChassis);
+            foreach (string w in "turn fans".Split(' ')) guardLine.Children.Add(Word(w));
+            guardLine.Children.Add(chipFans);
+            guardLine.Children.Add(Word("for"));
+            guardLine.Children.Add(chipHold);
         }
         /// <summary>The controls from the settings, inside Synced so their Changed does not write them back.</summary>
         void SyncGuardLine() {

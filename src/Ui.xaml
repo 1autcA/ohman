@@ -699,7 +699,7 @@
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                <StackPanel VerticalAlignment="Center" Margin="0,0,22,0">
                   <TextBlock Text="Thermal guard" Style="{StaticResource Row}"/>
                   <TextBlock x:Name="TxtGuardSub" Style="{StaticResource RowSub}"/>
                   <WrapPanel x:Name="GuardLine" Margin="0,4,0,0"/>

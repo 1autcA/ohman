@@ -893,7 +893,8 @@ namespace Ohman {
             if (DriverVersion == null) { DriverWhy = "not installed"; return; }
             if (DriverOutdated) { DriverWhy = "PawnIO " + DriverVersion + " is older than " + PawnIo.MinVersion + "; update it"; return; }
             string why;
-            Cpu = CpuRegisters.Open(out why);
+            bool deviceAbsent;
+            Cpu = CpuRegisters.Open(out why, out deviceAbsent);
             if (Cpu == null) {
                 string svc = PawnIo.ServiceState();
                 DriverWhy = why ?? "unavailable";
@@ -906,7 +907,7 @@ namespace Ohman {
                 // Only a device that cannot be opened means the driver itself is not there. A module the driver
                 // rejected (a CPU it has no support for) says nothing about the EC, which is its own module and
                 // on the boards that need it the whole reason the driver was installed.
-                if (DriverWhy.IndexOf("cannot open the PawnIO device", StringComparison.OrdinalIgnoreCase) >= 0) return;
+                if (deviceAbsent) return;
             }
             else if (S.DriverRestartPending) { S.DriverRestartPending = false; S.Save(); }
             if (P.Ec != null) {
@@ -1326,9 +1327,14 @@ namespace Ohman {
         /// <summary>What the guard holds the fans at. A stalled fan gets max whatever the setting says: a level
         /// the fan is not taking is not a level, and max is the one command with its own path.</summary>
         void GuardFans() {
-            if (GuardLevel <= 0 || guardStalled) { MaxFan(true, "Guard max fan"); return; }
+            // Max when: no level is set; the fans are not answering; this board cannot take a level at all
+            // (turning max off and then failing to write one is less cooling than before the guard fired); or
+            // the owner is already on Max, which the guard must never undercut.
+            if (GuardLevel <= 0 || guardStalled || !CanSetFanLevels || S.Fan == FanMode.Max) { MaxFan(true, "Guard max fan"); return; }
+            // Never below what the fans are already doing: a guard that slows them at the hottest moment is not one.
+            int level = Math.Max(GuardLevel, Math.Max(curLevel1, curLevel2));
             MaxFan(false, "Guard level");
-            WriteLevels(GuardLevel, GuardLevel, "Guard level");
+            WriteLevels(level, level, "Guard level");
         }
         public void SetGuard(bool on) {
             S.Guard = on;
@@ -1381,9 +1387,12 @@ namespace Ohman {
                     // 1.1 did exactly that for minutes. It cannot fix this from here, but it must not be quiet.
                     if (f[0] >= 0 && f[1] >= 0 && (f[0] + f[1]) < P.Guard.StallLevelSum) guardIgnoredTicks++; else guardIgnoredTicks = 0;
                     if (guardIgnoredTicks == 3) {
-                        Log.Write("THERMAL GUARD is being ignored: max fan commanded every tick and the firmware still reports "
+                        Log.Write("THERMAL GUARD is being ignored: commanded every tick and the firmware still reports "
                             + f[0] + "/" + f[1] + ". Fan commands are not reaching the fans.");
                         Fire(Toast, "The fans are not answering the thermal guard. Save your work and restart the machine.", true);
+                        // A level the fans are not taking is not a level. Max has its own command path; try it.
+                        guardStalled = true;
+                        lock (applySync) GuardFans();
                     }
                     bool safe = (!cpuKnown || t < GuardCpuSafe) && (!chassisUsable || c < GuardChassisSafe);
                     // One warm sample no longer restarts the minute. A sensor sitting a degree under its own

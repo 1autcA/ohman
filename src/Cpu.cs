@@ -156,14 +156,16 @@ namespace Ohman {
         }
 
         /// <summary>The register set for this machine's CPU, or null with the reason.</summary>
-        public static CpuRegisters Open(out string why) {
+        public static CpuRegisters Open(out string why) { bool absent; return Open(out why, out absent); }
+        public static CpuRegisters Open(out string why, out bool deviceAbsent) {
             string vendor = Vendor();
+            deviceAbsent = false;
             if (IsIntel) {
-                PawnIoModule m = PawnIo.Open("IntelMSR", out why);
+                PawnIoModule m = PawnIo.Open("IntelMSR", out why, out deviceAbsent);
                 return m == null ? null : new IntelCpu(m);
             }
             if (vendor.IndexOf("AMD", StringComparison.OrdinalIgnoreCase) >= 0) {
-                PawnIoModule m = PawnIo.Open("AMDFamily17", out why);
+                PawnIoModule m = PawnIo.Open("AMDFamily17", out why, out deviceAbsent);
                 return m == null ? null : new AmdCpu(m);
             }
             why = "unknown CPU vendor '" + vendor + "'";

@@ -168,11 +168,18 @@ namespace Ohman {
             }
         }
         /// <summary>Open the driver with one of our modules in it. Null, with the reason, when it cannot be done.</summary>
-        public static PawnIoModule Open(string module, out string why) {
+        public static PawnIoModule Open(string module, out string why) { bool absent; return Open(module, out why, out absent); }
+        /// <summary>deviceAbsent: the driver itself could not be opened, as opposed to this one module being refused.
+        /// The two mean different things to a caller with a second module to try.</summary>
+        public static PawnIoModule Open(string module, out string why, out bool deviceAbsent) {
             why = null;
-            if (!Installed) { why = "not installed"; return null; }
-            try { return PawnIoModule.Load(module, Module(module), out why); }
-            catch (Exception ex) { why = ex.Message; return null; }
+            deviceAbsent = false;
+            if (!Installed) { why = "not installed"; deviceAbsent = true; return null; }
+            try {
+                PawnIoModule m = PawnIoModule.Load(module, Module(module), out why);
+                if (m == null && why != null && why.StartsWith("cannot open", StringComparison.Ordinal)) deviceAbsent = true;
+                return m;
+            } catch (Exception ex) { why = ex.Message; return null; }
         }
 
         // ---------- installing ----------

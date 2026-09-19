@@ -373,17 +373,26 @@ namespace Ohman {
                 why = "0x" + Map.Manual.ToString("X2") + " reads 0x" + (r.Manual < 0 ? "??" : r.Manual.ToString("X2")) + ", which is not a fan-control state";
                 return false;
             }
-            if (r.Cpu < 20 || r.Cpu > 110) { why = "0x" + Map.CpuTemp.ToString("X2") + " reads " + r.Cpu + ", which is not a temperature"; return false; }
-            if (!double.IsNaN(dieTemp) && Math.Abs(r.Cpu - dieTemp) > 25) {
-                why = "it reads " + r.Cpu + " where the CPU itself reads " + dieTemp.ToString("0");
-                return false;
+            // A temperature register that reads exactly zero is one this board does not populate, not one that
+            // is lying: 878A, the board this route exists for, has its fans at the map's addresses and nothing at
+            // 0x57. Rejecting the map over it left both 878A owners with no fan control. An absent temperature
+            // takes nothing away from the fan registers; it only means the tachometers have to carry the proof
+            // on their own, so that check stops being optional below.
+            bool tempAbsent = r.Cpu == 0;
+            if (!tempAbsent) {
+                if (r.Cpu < 20 || r.Cpu > 110) { why = "0x" + Map.CpuTemp.ToString("X2") + " reads " + r.Cpu + ", which is not a temperature"; return false; }
+                if (!double.IsNaN(dieTemp) && Math.Abs(r.Cpu - dieTemp) > 25) {
+                    why = "it reads " + r.Cpu + " where the CPU itself reads " + dieTemp.ToString("0");
+                    return false;
+                }
             }
             if (r.Rpm1 < 0 || r.Rpm1 > 9000 || r.Rpm2 < 0 || r.Rpm2 > 9000) { why = "fan speeds of " + r.Rpm1 + " and " + r.Rpm2 + " are not rpm"; return false; }
-            if (mailboxRpm != null && mailboxRpm.Length > 1 && mailboxRpm[0] > 0) {
+            bool mailboxKnown = mailboxRpm != null && mailboxRpm.Length > 1 && mailboxRpm[0] > 0;
+            if (mailboxKnown) {
                 int want = mailboxRpm[0] * 100, slack = Math.Max(500, want / 4);
                 if (Math.Abs(r.Rpm1 - want) > slack) { why = "it reads " + r.Rpm1 + " rpm where the firmware reads " + want; return false; }
-            }
-            why = "CPU " + r.Cpu + " C, fans " + r.Rpm1 + "/" + r.Rpm2 + " rpm, control 0x" + r.Manual.ToString("X2");
+            } else if (tempAbsent) { why = "no temperature at 0x" + Map.CpuTemp.ToString("X2") + " and no firmware fan speed to check the tachometers against"; return false; }
+            why = (tempAbsent ? "no temperature register" : "CPU " + r.Cpu + " C") + ", fans " + r.Rpm1 + "/" + r.Rpm2 + " rpm, control 0x" + r.Manual.ToString("X2");
             return true;
         }
 

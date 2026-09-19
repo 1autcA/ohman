@@ -649,11 +649,18 @@ namespace Ohman {
             btnHotkeys.Content = HotkeyGlyph(false);
             PreviewKeyUp += delegate { ShowHeldModifiers(); };
             BuildGuardLine();
-            // The sentence is the row. Its values are coloured words that open a list on click, so there is nothing
-            // to open first and nothing a scroll wheel passing over could change.
+            // The sentence is the row. Its values are grey words until the pencil, then the accent and a list on
+            // click; the tick greys them again. Same pencil and tick as the hotkeys row.
             txtGuardSub.Visibility = Visibility.Collapsed;
             guardLine.Visibility = Visibility.Visible;
-            btnGuard.Visibility = Visibility.Collapsed;
+            btnGuard.Content = HotkeyGlyph(false);
+            btnGuard.ToolTip = "Change the rule";
+            btnGuard.Click += delegate {
+                guardOpen = !guardOpen;
+                btnGuard.Content = HotkeyGlyph(guardOpen);
+                btnGuard.ToolTip = guardOpen ? "Done" : "Change the rule";
+                foreach (ValueLink v in new[] { chipCpu, chipChassis, chipFans, chipHold }) v.Editable = guardOpen;
+            };
             guardDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             guardDebounce.Tick += delegate {
                 guardDebounce.Stop();
@@ -2318,7 +2325,7 @@ namespace Ohman {
             else if (page == "update") ShowUpdateRow();          // where the rail button goes: settings, at the update row
             else if (page == "driver") ShowDriverRow();          // settings, at the driver row (screenshot aid)
             else if (page == "hotkeys") { Navigate(Page.Settings, false); ToggleHotkeyPanel(); }   // settings, hotkey panel open (screenshot aid)
-            else if (page == "guard") Navigate(Page.Settings, false);
+            else if (page == "guard") { Navigate(Page.Settings, false); btnGuard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
             else if (page == "guardrow") Navigate(Page.Settings, false);      // the row closed, for screenshots
             Morph(false);
             if (Program.JustUpdated) ShowToast("Updated to " + Program.Version, false);

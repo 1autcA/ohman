@@ -96,19 +96,26 @@ namespace Ohman {
         public string[] Items = new string[0];
         public event Action<int> Changed;
         int index;
-        readonly TextBlock text = new TextBlock { FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = Ui.Brush(Ui.BalColor), VerticalAlignment = VerticalAlignment.Center };
+        bool editable;
+        readonly TextBlock text = new TextBlock { FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>Grey and inert until the row's pencil says otherwise; then the accent, a hand, and a list on click.</summary>
+        public bool Editable {
+            get { return editable; }
+            set { editable = value; text.Foreground = value ? Ui.Brush(Ui.BalColor) : Ui.TextB; Cursor = value ? Cursors.Hand : Cursors.Arrow; if (!value) Background = Brushes.Transparent; }
+        }
         readonly System.Windows.Controls.Primitives.Popup popup = new System.Windows.Controls.Primitives.Popup { StaysOpen = false, AllowsTransparency = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 2 };
         public ValueLink() {
             Background = Brushes.Transparent; CornerRadius = new CornerRadius(4); Padding = new Thickness(4, 1, 4, 1); Margin = new Thickness(1, 0, 1, 0);
-            Cursor = Cursors.Hand; VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true; Child = text;
+            Cursor = Cursors.Arrow; VerticalAlignment = VerticalAlignment.Center; SnapsToDevicePixels = true; UseLayoutRounding = true; Child = text;
             popup.PlacementTarget = this;
-            MouseEnter += delegate { Background = Ui.Pill; };
+            MouseEnter += delegate { if (editable) Background = Ui.Pill; };
             MouseLeave += delegate { if (!popup.IsOpen) Background = Brushes.Transparent; };
             popup.Closed += delegate { Background = IsMouseOver ? Ui.Pill : Brushes.Transparent; };
         }
         public int Index { get { return index; } set { index = Math.Max(0, Math.Min(Items.Length - 1, value)); text.Text = Items.Length > 0 ? Items[index] : ""; } }
         void Set(int i) { int was = index; Index = i; if (index != was) { var h = Changed; if (h != null) h(index); } }
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) {
+            if (!editable) return;
             var list = new StackPanel();
             Border current = null;
             for (int i = 0; i < Items.Length; i++) {

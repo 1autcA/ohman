@@ -1254,6 +1254,10 @@ namespace Ohman {
             Changed();
         }
         public void ResetHotkeys() { for (int i = 0; i < HotkeyTable.Count; i++) S.HotkeyText[i] = null; S.Save(); Changed(); }
+        /// <summary>Put every binding back as it was, for a rebind Windows refused: SetHotkey may have taken the
+        /// key from another action on the way, and that one has to come back too.</summary>
+        public string[] SnapshotHotkeys() { return (string[])S.HotkeyText.Clone(); }
+        public void RestoreHotkeys(string[] snapshot) { Array.Copy(snapshot, S.HotkeyText, HotkeyTable.Count); S.Save(); Changed(); }
         public void SetEcoOnBattery(bool on) { S.EcoOnBattery = on; S.Save(); Changed(); }
         public void SetSyncWinPower(bool on) { S.SyncWinPower = on; S.Save(); if (on) SetWinPowerOverlay(ModeIndex); Changed(); }
         public void SetLowHzOnBattery(bool on) { S.LowHzOnBattery = on; S.Save(); Changed(); }

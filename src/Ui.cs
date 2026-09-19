@@ -635,6 +635,7 @@ namespace Ohman {
             btnHotkeys.Click += delegate { ToggleHotkeyPanel(); };
             btnHotkeys.Content = HotkeyGlyph(false);
             PreviewKeyDown += OnHotkeyCapture;
+            Deactivated += delegate { StopListening(); };     // another window took the keyboard; the keys are not coming here
             OnSwitch(tgEcoBattery, delegate(bool on) { Bg(delegate { E.SetEcoOnBattery(on); }); });
             OnSwitch(tgSyncPower, delegate(bool on) { Bg(delegate { E.SetSyncWinPower(on); }); });
             OnSwitch(tgLowHzBattery, delegate(bool on) { Bg(delegate { E.SetLowHzOnBattery(on); }); });
@@ -1014,6 +1015,7 @@ namespace Ohman {
 
         // ---------- pages ----------
         void Navigate(Page p, bool animate) {
+            if (p != Page.Settings) StopListening();
             if (p == cur && pageShown) return;
             bool wasKbd = cur == Page.Keyboard;
             var old = pageShown ? pages[(int)cur] : null;
@@ -2148,7 +2150,7 @@ namespace Ohman {
             if (E.HotkeysCustomised) {
                 var reset = new TextBlock { Text = "Reset all", FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
                 Grid.SetRow(reset, b.Length); Grid.SetColumn(reset, 1);
-                reset.MouseLeftButtonUp += delegate { StopListening(); UnregisterHotkeys(); E.ResetHotkeys(); if (E.S.Hotkeys) RegisterHotkeys(); BuildHotkeyPanel(); };
+                reset.MouseLeftButtonUp += delegate { StopListening(); UnregisterHotkeys(); E.ResetHotkeys(); if (HotkeysOn) RegisterHotkeys(); BuildHotkeyPanel(); };
                 g.Children.Add(reset);
             }
             hotkeyPanel.Children.Add(g);
@@ -2168,11 +2170,14 @@ namespace Ohman {
             BuildHotkeyPanel();
             Focus();
         }
+        /// <summary>What the switch says, not E.S.Hotkeys: the switch handler posts the engine update to a queue,
+        /// and this can run before that item does.</summary>
+        bool HotkeysOn { get { return tgHotkeys.IsChecked == true; } }
         void StopListening() {
             if (listening < 0) return;
             listening = -1;
-            if (E.S.Hotkeys) RegisterHotkeys();
-            BuildHotkeyPanel();
+            if (HotkeysOn) RegisterHotkeys();
+            if (hotkeysOpen) BuildHotkeyPanel();
         }
         void OnHotkeyCapture(object o, KeyEventArgs e) {
             if (listening < 0) return;
@@ -2185,16 +2190,16 @@ namespace Ohman {
             Hotkey h;
             if (!Hotkey.FromKey(key, Keyboard.Modifiers, out h)) return;          // a modifier on its own: keep waiting
             if (!h.Valid) { ShowToast("Hold Ctrl, Alt, Shift or Win with it, or use an F-key", true); return; }
-            Hotkey before = E.GetHotkey(action);
+            string[] before = E.SnapshotHotkeys();
             E.SetHotkey(action, h);
             listening = -1;
-            if (E.S.Hotkeys) RegisterHotkeys();
+            if (HotkeysOn) RegisterHotkeys();
             // Windows said no: another program owns that combination. The old binding comes back, and the
             // toast says why nothing changed rather than leaving a shortcut on screen that does nothing.
             if (hotkeyBusy[idx]) {
                 UnregisterHotkeys();
-                E.SetHotkey(action, before);
-                if (E.S.Hotkeys) RegisterHotkeys();
+                E.RestoreHotkeys(before);          // including any action the new key was taken from
+                if (HotkeysOn) RegisterHotkeys();
                 ShowToast(h + " is already used by another program", true);
             }
             BuildHotkeyPanel();
@@ -2283,6 +2288,7 @@ namespace Ohman {
         }
         void TogglePanel() { if (IsVisible) HideToTray(); else ShowPanel(); }
         void HideToTray() {
+            StopListening();
             StopMorph();
             E.S.Save();
             Hide();

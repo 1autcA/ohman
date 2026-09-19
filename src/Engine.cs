@@ -1254,7 +1254,6 @@ namespace Ohman {
             Changed();
         }
         public void ResetHotkeys() { for (int i = 0; i < HotkeyTable.Count; i++) S.HotkeyText[i] = null; S.Save(); Changed(); }
-        public void ToggleCurve() { SetFan(S.Fan == FanMode.Custom ? FanMode.Auto : FanMode.Custom, S.Fan1, S.Fan2, false); }
         public void SetEcoOnBattery(bool on) { S.EcoOnBattery = on; S.Save(); Changed(); }
         public void SetSyncWinPower(bool on) { S.SyncWinPower = on; S.Save(); if (on) SetWinPowerOverlay(ModeIndex); Changed(); }
         public void SetLowHzOnBattery(bool on) { S.LowHzOnBattery = on; S.Save(); Changed(); }

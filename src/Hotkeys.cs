@@ -8,7 +8,7 @@ using System.Windows.Input;
 
 namespace Ohman {
 
-    public enum HotkeyAction { Eco = 0, Balanced = 1, Performance = 2, MaxFan = 3, Panel = 4, Cycle = 5, Curve = 6 }
+    public enum HotkeyAction { Eco = 0, Balanced = 1, Performance = 2, MaxFan = 3, Cycle = 4 }
 
     /// <summary>One binding: RegisterHotKey's modifier bits and a virtual key. Vk 0 is "none".</summary>
     public struct Hotkey {
@@ -94,21 +94,20 @@ namespace Ohman {
         }
     }
 
-    /// <summary>The seven actions, their labels, their settings keys and their defaults, in HotkeyAction order.</summary>
+    /// <summary>The five actions, their labels, their settings keys and their defaults, in HotkeyAction order.
+    /// Opening the panel is the OMEN key's job and the tray's, not a shortcut's.</summary>
     public static class HotkeyTable {
-        public const int Count = 7;
-        public static readonly string[] Names = { "Eco", "Balanced", "Performance", "Max fan", "Show " + Program.DisplayName, "Cycle modes", "Toggle fan curve" };
-        public static readonly string[] Keys = { "Eco", "Balanced", "Performance", "MaxFan", "Panel", "Cycle", "Curve" };
+        public const int Count = 5;
+        public static readonly string[] Names = { "Eco", "Balanced", "Performance", "Max fan", "Cycle modes" };
+        public static readonly string[] Keys = { "Eco", "Balanced", "Performance", "MaxFan", "Cycle" };
         public static readonly Hotkey[] Defaults = {
-            CtrlAlt('E'), CtrlAlt('B'), CtrlAlt('P'), CtrlAlt('M'), CtrlAlt('O'),
+            CtrlAlt('E'), CtrlAlt('B'), CtrlAlt('P'), CtrlAlt('M'),
             new Hotkey(Hotkey.Shift, 0x7A),        // Shift+F11, next to the OMEN key. Not F12: Windows reserves it for the debugger
-            CtrlAlt('C'),
         };
         static Hotkey CtrlAlt(char c) { return new Hotkey(Hotkey.Ctrl | Hotkey.Alt, (uint)c); }
 
-        /// <summary>The line under the Hotkeys row, grouped by modifier set: "Ctrl+Alt: E/B/P modes, M max fan,
-        /// O panel, C curve · Shift+F11 cycles". Five shortcuts that share Ctrl+Alt are one entry that way rather
-        /// than four lines of it.</summary>
+        /// <summary>The line under the Hotkeys row, grouped by modifier set: "Ctrl+Alt: E/B/P modes, M max fan ·
+        /// Shift+F11 cycles". Four shortcuts that share Ctrl+Alt are one entry that way rather than a line each.</summary>
         public static string Summary(Hotkey[] b) {
             var order = new System.Collections.Generic.List<uint>();
             var items = new System.Collections.Generic.Dictionary<uint, System.Collections.Generic.List<string>>();
@@ -126,9 +125,7 @@ namespace Ohman {
                 if (!p.IsEmpty) add(p.Mods, Hotkey.KeyName(p.Vk) + " performance");
             }
             if (!b[3].IsEmpty) add(b[3].Mods, Hotkey.KeyName(b[3].Vk) + " max fan");
-            if (!b[4].IsEmpty) add(b[4].Mods, Hotkey.KeyName(b[4].Vk) + " panel");
-            if (!b[6].IsEmpty) add(b[6].Mods, Hotkey.KeyName(b[6].Vk) + " curve");
-            if (!b[5].IsEmpty) add(b[5].Mods, Hotkey.KeyName(b[5].Vk) + " cycles");
+            if (!b[4].IsEmpty) add(b[4].Mods, Hotkey.KeyName(b[4].Vk) + " cycles");
             if (order.Count == 0) return "No shortcuts set";
             var parts = new System.Collections.Generic.List<string>();
             foreach (uint mods in order) {

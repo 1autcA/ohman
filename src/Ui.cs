@@ -2096,59 +2096,57 @@ namespace Ohman {
             if (!hotkeysOpen) StopListening();
             // A pencil to open, a tick to close: the same spot, one glyph, no words to wrap the sub-line around.
             btnHotkeys.Content = hotkeysOpen ? "" : "";
-            btnHotkeys.ToolTip = hotkeysOpen ? "Done" : "Change the shortcuts";
+            btnHotkeys.ToolTip = hotkeysOpen ? "Done" : "Change the shortcuts: click one, then press the keys you want. Esc keeps the old one, Backspace removes it.";
+            txtHotkeysSub.Visibility = hotkeysOpen ? Visibility.Collapsed : Visibility.Visible;   // the panel is the sub-line, in full
             if (hotkeysOpen) BuildHotkeyPanel();
             hotkeyPanel.Visibility = hotkeysOpen ? Visibility.Visible : Visibility.Collapsed;
             Remeasure(cur);
         }
-        /// <summary>One line per action: its name, its keys as key caps, and what is wrong with it if anything.
-        /// Rebuilt whole on every change; seven rows is nothing.</summary>
+        /// <summary>One line per action, name then one key cap, tight rows. The page is about 325 device pixels
+        /// wide, which two columns of name and cap do not fit at any size, so five short rows it is. Rebuilt whole
+        /// on every change, which is nothing. The hint lives on the pencil's tooltip, not down here.</summary>
         void BuildHotkeyPanel() {
             hotkeyPanel.Children.Clear();
             Hotkey[] b = E.GetHotkeys();
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(118) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int r = 0; r < b.Length; r++) g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(26) });
             for (int i = 0; i < b.Length; i++) {
                 int idx = i;
-                var g = new Grid { Margin = new Thickness(0, 0, 0, 6), Cursor = Cursors.Hand, Background = Brushes.Transparent };
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                var name = new TextBlock { Text = HotkeyTable.Names[i], FontFamily = Ui.UiFont, FontSize = 13, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center };
-                g.Children.Add(name);
-                var caps = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(caps, 1);
+                var name = new TextBlock { Text = HotkeyTable.Names[i], FontFamily = Ui.UiFont, FontSize = 13, Foreground = Ui.TextB, VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand };
+                Grid.SetRow(name, i);
+                var cell = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand, Background = Brushes.Transparent };
+                Grid.SetRow(cell, i); Grid.SetColumn(cell, 1);
                 if (listening == i) {
                     Border cap = KeyCap("Press keys…", accent);
-                    var pulse = new System.Windows.Media.Animation.DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(600)) { AutoReverse = true, RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever };
-                    cap.BeginAnimation(OpacityProperty, pulse);
-                    caps.Children.Add(cap);
+                    cap.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(600)) { AutoReverse = true, RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever });
+                    cell.Children.Add(cap);
                 } else if (b[i].IsEmpty) {
-                    caps.Children.Add(new TextBlock { Text = "none", FontFamily = Ui.UiFont, FontSize = 12, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center });
+                    cell.Children.Add(KeyCap("none", Ui.Desc));
                 } else {
-                    string[] parts = b[i].Parts();
-                    for (int k = 0; k < parts.Length; k++) {
-                        if (k > 0) caps.Children.Add(new TextBlock { Text = "+", Foreground = Ui.Desc, FontSize = 11, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center });
-                        caps.Children.Add(KeyCap(parts[k], hotkeyBusy[i] ? Ui.Brush(Ui.Warn) : null));
-                    }
-                    if (hotkeyBusy[i]) caps.Children.Add(new TextBlock { Text = "in use", Foreground = Ui.Brush(Ui.Warn), FontFamily = Ui.UiFont, FontSize = 11, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "Another program has this shortcut, so it does nothing here. Click to pick a different one." });
+                    Border cap = KeyCap(b[i].ToString(), hotkeyBusy[i] ? Ui.Brush(Ui.Warn) : null);
+                    // Amber is the whole signal; the words are on hover, where they cost no width.
+                    if (hotkeyBusy[i]) { cap.BorderBrush = Ui.Brush(Ui.Warn); cap.ToolTip = "In use by another program, so it does nothing here. Click to pick a different one."; }
+                    cell.Children.Add(cap);
                 }
-                g.Children.Add(caps);
-                g.MouseLeftButtonUp += delegate { StartListening(idx); };
-                hotkeyPanel.Children.Add(g);
+                name.MouseLeftButtonUp += delegate { StartListening(idx); };
+                cell.MouseLeftButtonUp += delegate { StartListening(idx); };
+                g.Children.Add(name);
+                g.Children.Add(cell);
             }
-            var foot = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-            foot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            foot.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            foot.Children.Add(new TextBlock { Text = listening >= 0 ? "Esc keeps the old one, Backspace removes it" : "Click a shortcut, then press the keys you want", FontFamily = Ui.UiFont, FontSize = 12, Foreground = Ui.Desc, VerticalAlignment = VerticalAlignment.Center });
             if (E.HotkeysCustomised) {
-                var reset = new TextBlock { Text = "Reset all", FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(reset, 1);
+                var reset = new TextBlock { Text = "Reset all", FontFamily = Ui.UiFont, FontSize = 12.5, Foreground = accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+                Grid.SetRow(reset, b.Length - 1); Grid.SetColumn(reset, 2);
                 reset.MouseLeftButtonUp += delegate { StopListening(); UnregisterHotkeys(); E.ResetHotkeys(); if (E.S.Hotkeys) RegisterHotkeys(); BuildHotkeyPanel(); };
-                foot.Children.Add(reset);
+                g.Children.Add(reset);
             }
-            hotkeyPanel.Children.Add(foot);
+            hotkeyPanel.Children.Add(g);
         }
         Border KeyCap(string text, Brush fg) {
             return new Border {
-                Background = Ui.Pill, CornerRadius = new CornerRadius(4), Padding = new Thickness(7, 2, 7, 2), Margin = new Thickness(0, 0, 4, 0),
+                Background = Ui.Pill, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 2, 6, 2), Margin = new Thickness(0, 0, 4, 0),
                 BorderBrush = Ui.Line, BorderThickness = new Thickness(1),
                 Child = new TextBlock { Text = text, FontFamily = Ui.MonoFont, FontSize = 11, Foreground = fg ?? Ui.TextB }
             };
@@ -2197,13 +2195,7 @@ namespace Ohman {
                 int id = wp.ToInt32() - 1;
                 if (id >= 0 && id <= 2) { Flash(Engine.ModeNames[id] + " mode", ModeSubs[id], id); ApplyModeAsync(id); }
                 else if (id == (int)HotkeyAction.MaxFan) ToggleMaxWithFlash();
-                else if (id == (int)HotkeyAction.Panel) TogglePanel();
                 else if (id == (int)HotkeyAction.Cycle) CycleWithFlash();
-                else if (id == (int)HotkeyAction.Curve) {
-                    bool custom = E.S.Fan != FanMode.Custom;
-                    Flash(custom ? "Your fan curve" : "Fans auto", custom ? "Fans follow the curve you drew" : "Back to the firmware curve", -1);
-                    Bg(delegate { E.ToggleCurve(); });
-                }
                 handled = true;
             }
             return IntPtr.Zero;

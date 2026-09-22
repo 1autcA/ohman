@@ -80,12 +80,22 @@ namespace Ohman {
             return sb.ToString();
         }
 
+        /// <summary>Lines of a file another program is still writing. File.ReadLines asks for exclusive write, and
+        /// OMEN Gaming Hub keeps today's log open, so the newest log (the one that matters) was skipped in silence.</summary>
+        static IEnumerable<string> ReadShared(string path) {
+            using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete))
+            using (var r = new System.IO.StreamReader(fs)) {
+                string line;
+                while ((line = r.ReadLine()) != null) yield return line;
+            }
+        }
+
         /// <summary>One read-only BIOS query, reported whether it answers or not. A refusal is data: it is how we
         /// learned that board 8574 implements 0x20009 and none of 0x20008.</summary>
-        static byte[] Probe(StringBuilder sb, string label, uint cmd, uint op, byte[] data, int outSize) {
+        static byte[] Probe(StringBuilder sb, string label, uint cmd, uint op, byte[] data, int outSize, int show = 24) {
             try {
                 var d = Bios.Call(cmd, op, data, outSize);
-                sb.AppendLine("  " + label.PadRight(22) + "ok   " + Hex(d, 24));
+                sb.AppendLine("  " + label.PadRight(22) + "ok   " + Hex(d, show));
                 return d;
             } catch (Exception ex) {
                 sb.AppendLine("  " + label.PadRight(22) + "NO   " + Scrub(ex.Message));
@@ -361,7 +371,7 @@ namespace Ohman {
                 Probe(sb, "0x52 graphics mode", Bios.CMD_BIOS_READ, 0x52, z4, 4);
                 // 0x10 is deliberately not here: that query is the firmware's user-defined-fan trigger, not a read.
                 Probe(sb, "0x20009/01 support", BiosLighting.CMD, 0x01, z4, 128);
-                Probe(sb, "0x20009/02 colours", BiosLighting.CMD, 0x02, new byte[] { 0 }, 128);
+                Probe(sb, "0x20009/02 colours", BiosLighting.CMD, 0x02, new byte[] { 0 }, 128, 40);   // the zone colours start at byte 25
                 Probe(sb, "0x20009/04 backlight", BiosLighting.CMD, 0x04, new byte[] { 0 }, 128);
             } else sb.AppendLine("  (simulated hardware: nothing was asked)");
             sb.AppendLine();
@@ -432,7 +442,10 @@ namespace Ohman {
                 if (dir == null) sb.AppendLine("  (OMEN Gaming Hub has never run here)");
                 else {
                     string[] keys = { "IsCtgpModeSupport", "IsIccMaxSupport", "IsSurfaceTempSupport", "ChangeTppToDynamicBoost",
-                                      "GetUnleashedModePowerLimit4", "GetUnleashedModeTppOffset", "IsEnableTgpPpab", "SetPL1DefaultValue" };
+                                      "GetUnleashedModePowerLimit4", "GetUnleashedModeTppOffset", "IsEnableTgpPpab", "SetPL1DefaultValue",
+                                      "TppMinValue", "TppMaxValue", "IsExtremeModeSupport", "IsUnleashedModeSupport" };
+                    // PL1 differs per mode, and the first line alone said nothing about which: collect each distinct value.
+                    var pl1 = new List<string>();
                     var found = new Dictionary<string, string>();
                     var files = new List<System.IO.FileInfo>();
                     foreach (string f in System.IO.Directory.GetFiles(dir, "HPOMEN*.log")) files.Add(new System.IO.FileInfo(f));
@@ -441,16 +454,18 @@ namespace Ohman {
                     foreach (var f in files) {
                         if (++n > 4) break;
                         try {
-                            foreach (string line in System.IO.File.ReadLines(f.FullName))
+                            foreach (string line in ReadShared(f.FullName))
                                 foreach (string k in keys)
-                                    if (!found.ContainsKey(k) && line.IndexOf(k, StringComparison.Ordinal) >= 0) {
-                                        found[k] = Scrub(Strip(line)).PadRight(64) + "  (" + f.LastWriteTime.ToString("yyyy-MM-dd") + ")";
+                                    if (line.IndexOf(k, StringComparison.Ordinal) >= 0) {
+                                        if (k == "SetPL1DefaultValue") { string v = Scrub(Strip(line)); if (pl1.Count < 8 && !pl1.Contains(v)) pl1.Add(v); }
+                                        if (!found.ContainsKey(k)) found[k] = Scrub(Strip(line)).PadRight(64) + "  (" + f.LastWriteTime.ToString("yyyy-MM-dd") + ")";
                                     }
                         } catch { }
                     }
                     if (found.Count == 0) sb.AppendLine("  (no capability lines in the most recent logs)");
                     else sb.AppendLine("  (the date is the log each line came from - OGH may not have run recently)");
-                    foreach (string k in keys) if (found.ContainsKey(k)) sb.AppendLine("  " + found[k]);
+                    foreach (string k in keys) if (found.ContainsKey(k) && k != "SetPL1DefaultValue") sb.AppendLine("  " + found[k]);
+                    foreach (string v in pl1) sb.AppendLine("  " + v);
                 }
             } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
             sb.AppendLine();
@@ -490,7 +505,7 @@ namespace Ohman {
                     foreach (var f in files2) {
                         if (++n2 > 4) break;
                         try {
-                            foreach (string line in System.IO.File.ReadLines(f.FullName)) {
+                            foreach (string line in ReadShared(f.FullName)) {
                                 int at = line.IndexOf("inputData=", StringComparison.Ordinal);
                                 if (at < 0) continue;
                                 string v = line.Substring(at + 10).Trim().TrimEnd(',');
@@ -540,10 +555,14 @@ namespace Ohman {
                         || line.IndexOf("read-only", StringComparison.Ordinal) >= 0 || line.IndexOf("no fan table", StringComparison.Ordinal) >= 0
                         || line.IndexOf("system data", StringComparison.Ordinal) >= 0 || line.IndexOf("thermal zone", StringComparison.Ordinal) >= 0
                         || line.IndexOf("keyboard lighting", StringComparison.Ordinal) >= 0 || line.IndexOf("THERMAL GUARD", StringComparison.Ordinal) >= 0
-                        || line.IndexOf("FAIL ", StringComparison.Ordinal) >= 0)
+                        || line.IndexOf("FAIL ", StringComparison.Ordinal) >= 0 || line.IndexOf("driver:", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("fan route", StringComparison.Ordinal) >= 0 || line.IndexOf("EC ", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("EC:", StringComparison.Ordinal) >= 0 || line.IndexOf("giving up", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("lighting:", StringComparison.Ordinal) >= 0 || line.IndexOf("lamparray", StringComparison.Ordinal) >= 0
+                        || line.IndexOf("max fan:", StringComparison.Ordinal) >= 0)
                         keep.Add(line);
                 }
-                int from = Math.Max(0, keep.Count - 25);
+                int from = Math.Max(0, keep.Count - 60);    // a start writes about ten of these; keep several sessions
                 for (int i = from; i < keep.Count; i++) sb.AppendLine("  " + Scrub(keep[i]));
                 if (keep.Count == 0) sb.AppendLine("  (nothing notable yet)");
             } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
@@ -554,7 +573,11 @@ namespace Ohman {
             try {
                 var arrays = LampArray.All();
                 if (arrays.Count == 0) sb.AppendLine("  no HID Lighting And Illumination collection (usage page 0x59) on this machine");
-                foreach (var a in arrays) sb.AppendLine("  " + Scrub(a.Describe));
+                foreach (var a in arrays) {
+                    var mi = System.Text.RegularExpressions.Regex.Match(a.Path ?? "", @"&mi_([0-9a-f]{2})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    sb.AppendLine("  VID_" + a.VendorId.ToString("X4") + "&PID_" + a.ProductId.ToString("X4") + (mi.Success ? "&MI_" + mi.Groups[1].Value.ToUpperInvariant() : "")
+                        + (a.Internal ? "  internal  " : "  external  ") + Scrub(a.Describe));
+                }
             } catch (Exception ex) { sb.AppendLine("  unavailable (" + Scrub(ex.Message) + ")"); }
             sb.AppendLine();
 

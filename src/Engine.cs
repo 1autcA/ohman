@@ -118,6 +118,7 @@ namespace Ohman {
         public string[] HotkeyText = new string[HotkeyTable.Count];   // per action: null = default, "" = none, else "Ctrl+Alt+E"
         public bool DriverUse = true;               // use the PawnIO driver when it is installed
         public int FanCeilingSeen;                  // top fan level measured on this machine, 0 = not learned yet
+        public bool MaxIgnored;                     // this firmware takes the max-fan command and does nothing with it
         public bool DriverInstalledByOhman = false; // we put it there, so Uninstall may offer to take it away
         public bool DriverRestartPending = false;   // the installer asked for a restart and has not had one
         public string DriverNudgeDismissed = "";    // the Ohman version whose Home-page nudge was closed
@@ -215,6 +216,7 @@ namespace Ohman {
                         case "DriverRestartPending": if (bool.TryParse(v, out b)) s.DriverRestartPending = b; break;
                         case "DriverNudgeDismissed": s.DriverNudgeDismissed = v.Length > 24 ? v.Substring(0, 24) : v; break;
                         case "FanCeilingSeen": { int fc; if (int.TryParse(v, out fc) && fc >= 0 && fc <= 255) s.FanCeilingSeen = fc; break; }
+                        case "MaxIgnored": s.MaxIgnored = v == "1"; break;
                     }
                 }
             } catch (Exception ex) { Log.Write("settings apply " + k + ": " + ex.Message); }
@@ -277,6 +279,7 @@ namespace Ohman {
                 sb.AppendLine("DriverRestartPending=" + DriverRestartPending);
                 sb.AppendLine("DriverNudgeDismissed=" + DriverNudgeDismissed);
                 sb.AppendLine("FanCeilingSeen=" + FanCeilingSeen);
+                if (MaxIgnored) sb.AppendLine("MaxIgnored=1");
                 sb.AppendLine("MaxBackWhenCool=" + MaxBackWhenCool);
                 sb.AppendLine("MaxStopAfterMin=" + MaxStopAfterMin);
                 sb.AppendLine("ManualLinked=" + ManualLinked);
@@ -532,7 +535,7 @@ namespace Ohman {
                         case FanMode.Auto: case FanMode.Custom: AutoTick(false); break;
                         case FanMode.Manual: if ((DateTime.Now - lastFanWrite).TotalSeconds >= 30) { WriteLevels(S.Fan1, S.Fan2, "Fan level"); lastFanWrite = DateTime.Now; } break;
                         case FanMode.Max:
-                            if ((DateTime.Now - lastFanWrite).TotalSeconds >= 30) { Try(delegate { Hw.GetFanCount(); Hw.SetMaxFan(true); }, "Max fan"); lastFanWrite = DateTime.Now; }
+                            if ((DateTime.Now - lastFanWrite).TotalSeconds >= 30) { MaxFan(true, "Max fan"); lastFanWrite = DateTime.Now; }
                             if (MaxShouldStop()) { Log.Write("max fan: " + maxStopReason + ", back to auto"); leaveMax = true; }
                             break;
                     }
@@ -581,7 +584,7 @@ namespace Ohman {
             try { SetOghTasks(false); done.Add("re-enabled OMEN Gaming Hub's tasks"); }
             catch (Exception ex) { Log.Write("reset ogh tasks: " + ex.Message); }
             try {
-                if (!Hw.IsDemo && S.TookWinLighting && WinLighting.Present) {
+                if (!Hw.IsDemo && S.TookWinLighting) {
                     WinLighting.SetControl(true);
                     S.TookWinLighting = false;
                     done.Add("gave the keyboard back to Windows Dynamic Lighting");
@@ -597,7 +600,8 @@ namespace Ohman {
             if (BiosOk && !Hw.IsDemo && !ReadOnly) {
                 try {
                     lock (applySync) {
-                        Try(delegate { Hw.SetMode(P.ModeBalanced, OnBattery); }, "Reset mode");
+                        Try(delegate { Hw.SetMode(P.ModeBalanced, true); }, "Reset mode");
+                        exitMode = P.ModeBalanced;   // Park re-sends the mode on the way out; it must not undo this one
                         MaxFan(false, "Reset max fan");
                         if (Route == FanRoute.Ec) ReleaseEcFans("reset");
                         else WriteLevels(P.Curve.Fallback, P.Curve.Fallback, "Reset fan level");
@@ -611,6 +615,7 @@ namespace Ohman {
                     done.Add("turned the keyboard backlight back on");
                 }
             } catch (Exception ex) { Log.Write("reset backlight: " + ex.Message); }
+            ReleasePerKey();                                // after the backlight step: painting takes the keyboard again
             var sb = new StringBuilder();
             foreach (string d in done) sb.AppendLine("  - " + d);
             Log.Write("factory reset: " + string.Join("; ", done.ToArray()));
@@ -634,13 +639,14 @@ namespace Ohman {
             // wrote, with Windows told to keep out of it. One owner uninstalled Ohman, rebooted, and still had
             // our colours, because nothing left on the machine was allowed to change them.
             try {
-                if (!Hw.IsDemo && S.TookWinLighting && WinLighting.Present) {
+                if (!Hw.IsDemo && S.TookWinLighting) {
                     WinLighting.SetControl(true);
                     S.TookWinLighting = false;
                     S.Save();
                     Log.Write("handed the keyboard back to Windows Dynamic Lighting");
                 }
             } catch (Exception ex) { Log.Write("release lighting: " + ex.Message); }
+            ReleasePerKey();
             if (!BiosOk || Hw.IsDemo || ReadOnly) return;
             try {
                 // Max fan is a flag the firmware holds until something clears it, and once we have exited nothing
@@ -664,8 +670,18 @@ namespace Ohman {
                 if (Route == FanRoute.Ec) { lock (applySync) ReleaseEcFans("exit"); }
                 else {
                     lock (applySync) WriteLevels(want, want, "Fan level on exit");
-                    Log.Write("parked fans at " + want + " and cleared max fan; the firmware resumes its own curve within ~120 s");
+                    Log.Write("parked fans at " + want + " and cleared max fan");
                 }
+                // Then hand the fans to the firmware outright. The mode command's third byte is "fan control by
+                // BIOS": with it set the firmware runs its own curve and ignores levels. Parking alone waited for
+                // the keep-alive to lapse and the firmware to take the fans back, and on the Transcend 14 it did
+                // not: quitting with max fan on left 0x62 at 0x06 and both fans stopped at 101 C, and OMEN Gaming
+                // Hub could not start them either. The level above stays for firmware that ignores the byte. The
+                // next start clears it again in ApplyAll before the first level is written.
+                byte m = exitMode >= 0 ? (byte)exitMode : ModeByte;
+                bool handed;
+                lock (applySync) handed = Try(delegate { Hw.SetMode(m, true); }, "Fans to the firmware on exit");
+                if (handed) Log.Write("fans handed to the firmware's own curve (mode 0x" + m.ToString("X2") + ", fan control by BIOS)");
             } catch (Exception ex) { Log.Write("park fans: " + ex.Message); }
         }
 
@@ -724,6 +740,7 @@ namespace Ohman {
         //  * Therefore every mode drives the fans explicitly and never below the curve floor. Auto = the vendor app's own
         //    curve (P.Curve) stepped every 5 s; Manual = the slider levels; Max = the max-fan flag. All with the trigger.
         int curLevel1 = -1, curLevel2 = -1;                // last levels written (what the firmware currently holds)
+        int exitMode = -1;                                 // mode byte Park leaves behind; -1 is the current mode
 
         // The documented place to find a board's top fan level is its own fan table on 0x2F, and on some boards
         // that table is not populated: 8A26 answers with one fan and one row out of twelve. Ohman then keeps the
@@ -778,9 +795,27 @@ namespace Ohman {
         }
         void NoteFanLevelsCore(int[] f) {
             int seen = Math.Max(f[0], f[1]);
-            if (seen <= 0 || seen > 255) return;
-            // Only while asking for everything. Any lower and a low reading says nothing about the limit.
-            if (!(GuardActive || S.Fan == FanMode.Max || Math.Max(curLevel1, curLevel2) >= P.Curve.Ceiling)) {
+            if (seen < 0 || seen > 255) return;
+            lastFanSeen = seen;
+            if (maxAskedAt != DateTime.MinValue && (DateTime.Now - maxAskedAt).TotalSeconds >= 15) {
+                maxAskedAt = DateTime.MinValue;
+                // Near the top counts as working too: that is where max puts the fans, and it is the only verdict
+                // available when the ask came before any reading.
+                if ((maxAskedFrom >= 0 && seen >= maxAskedFrom + 3) || seen >= P.Curve.Ceiling - CeilingShort) { maxProven = true; maxIgnoredVerdicts = 0; }
+                else if (maxAskedFrom > 0 && CanSetFanLevels && ++maxIgnoredVerdicts >= 2) {
+                    // Slow and unmoved 15 s after two separate asks.
+                    S.MaxIgnored = true;
+                    S.Save();
+                    Log.Write("max fan: the firmware took the command twice and the fans stayed at " + seen + " (from " + maxAskedFrom
+                        + "); Max and the thermal guard write the ceiling as a level from now on");
+                    lastFanWrite = DateTime.MinValue;   // the Max keep-alive re-sends on its next tick; the guard re-sends every tick
+                }
+            }
+            if (seen == 0) return;
+            // Only while asking for everything. Any lower and a low reading says nothing about the limit. A max flag
+            // not yet seen to work counts for nothing: on firmware that ignores it, these readings are the curve's.
+            bool maxAsking = (GuardActive || S.Fan == FanMode.Max) && maxProven;
+            if (!(maxAsking || Math.Max(curLevel1, curLevel2) >= P.Curve.Ceiling)) {
                 ceilingTicks = 0; ceilingHighWater = 0; return;
             }
             if (seen > ceilingHighWater) ceilingHighWater = seen;
@@ -1062,7 +1097,28 @@ namespace Ohman {
         FanMode fanBeforeMax { get { return (FanMode)S.FanBeforeMax; } set { S.FanBeforeMax = (int)value; } }
 
         /// <summary>Max-fan flag with the keep-alive trigger in front of it, the pair every fan path uses.</summary>
-        void MaxFan(bool on, string what) { Try(delegate { Hw.GetFanCount(); Hw.SetMaxFan(on); }, what); }
+        /// On the EC route the controller is in manual at whatever level we last wrote, and nothing shows the flag
+        /// overrides that (878A's owner reported Max doing nothing), so there Max also holds the ceiling through the
+        /// EC, which renews its hand-back countdown too. It only ever adds air, whichever way the flag behaves.
+        ///
+        /// Some firmware takes the flag, answers success and does nothing: an 8A26 sat at 2300 rpm on "Max" while its
+        /// curve at 100% reached 4300, and the thermal guard, which is the same flag, said "fans to max" over it.
+        /// So the first time Max is asked for, the next readings are watched (NoteFanLevelsCore); a flag that moved
+        /// nothing is remembered, and from then on Max is the ceiling written as a level, with the flag still sent.
+        void MaxFan(bool on, string what) {
+            Try(delegate { Hw.GetFanCount(); Hw.SetMaxFan(on); }, what);
+            if (!on) { maxAskedAt = DateTime.MinValue; return; }
+            if (Route == FanRoute.Ec) WriteLevelsEc(P.Curve.Ceiling, P.Curve.Ceiling, what + " via EC");
+            else if (S.MaxIgnored) WriteLevels(P.Curve.Ceiling, P.Curve.Ceiling, what + " as a level");
+            // Not from a stall: stopped fans that take a while to answer max are the firmware recovering, not ignoring
+            // the flag. lastFanSeen -1 (asked before the first reading, e.g. Max restored at start) watches too, but
+            // can only prove the flag, never condemn it.
+            else if (!maxProven && maxAskedAt == DateTime.MinValue && !guardStalled && lastFanSeen != 0) { maxAskedAt = DateTime.Now; maxAskedFrom = lastFanSeen; }
+        }
+        DateTime maxAskedAt = DateTime.MinValue;   // when an unproven max flag was sent and is being watched
+        int maxAskedFrom, lastFanSeen = -1;        // the fan reading before it, and the latest reading (-1 none yet)
+        bool maxProven;                            // the flag has been seen raising the fans this run
+        int maxIgnoredVerdicts;                    // watches that saw nothing move; two, on separate asks, before it is believed
 
         void ApplyFanCore() {
             if (GuardActive) { GuardFans(); return; }      // the guard owns the fans until it releases
@@ -1577,6 +1633,7 @@ namespace Ohman {
                     var la = LampArray.FindKeyboard();
                     if (la != null) Light = new PerKeyLighting(la);
                     else Log.Write("per-key board with no HID lighting interface we can drive; colours left to Windows");
+                    WinLighting.Warm();
                 }
                 if (Light == null) return;
                 // One-time repair. Before this build a per-key keyboard was initialised to white for every lamp,
@@ -1591,7 +1648,7 @@ namespace Ohman {
                 var fw = Light.GetColors();
                 LightColors = ParseColors(S.LightColors, Light.Zones);
                 if (LightColors == null) { LightColors = fw; S.LightColors = JoinColors(fw); }    // first run: keep what the keyboard shows now
-                if (S.Light < 0) S.Light = (WinLighting.Present && WinLighting.HasControl) ? 2 : ((Light.GetBacklight() & BiosLighting.ON_FLAG) != 0 ? 1 : 0);
+                if (S.Light < 0) S.Light = WinLighting.HasControl ? 2 : ((Light.GetBacklight() & BiosLighting.ON_FLAG) != 0 ? 1 : 0);
                 Log.Write("lighting: " + Light.Describe + ", mode " + S.Light + ", effect " + S.LightEffect + ", level " + S.LightLevel + (WinLighting.Present ? ", Windows Dynamic Lighting present" + (WinLighting.HasControl ? " (in control)" : "") : ""));
             } catch (Exception ex) { Log.Write("lighting init: " + ex.Message); Light = null; }
         }
@@ -1606,14 +1663,22 @@ namespace Ohman {
         Rgb[] Scaled(Rgb[] c) { var r = new Rgb[c.Length]; double f = Math.Max(0.05, S.LightLevel / 100.0); for (int i = 0; i < c.Length; i++) r[i] = c[i].Scale(f); return r; }
 
         /// <summary>Push the chosen lighting state to the keyboard. Caller holds applySync.</summary>
+        void ReleasePerKey() {
+            try { var pk = Light as PerKeyLighting; if (pk != null) pk.Release(); } catch (Exception ex) { Log.Write("release per-key: " + ex.Message); }
+        }
         void ApplyLightCore() {
             if (Light == null) return;
             StopEffect();
-            if (S.Light == 2) { if (WinLighting.Present) WinLighting.SetControl(true); return; }      // Windows paints; we stay out of it
+            // A keyboard nothing here can light is left entirely alone, Windows' switch included: taking Dynamic
+            // Lighting "for" it took whatever else was listed, a Logitech driver on one OMEN 17.
+            if (Light.Inert) return;
+            if (S.Light == 2) { ReleasePerKey(); WinLighting.SetControl(true); return; }      // Windows paints; we stay out of it
             // Record that we took it. Plenty of people switch Dynamic Lighting off themselves because it fights
             // vendor software, and handing it back on exit to someone who never had it on would be us turning a
             // Windows feature on behind their back.
-            if (WinLighting.Present && WinLighting.HasControl) { S.TookWinLighting = true; S.Save(); WinLighting.SetControl(false); }   // take the keyboard first or Windows overwrites us
+            // HasControl, not Present: Present only counts HP's virtual device, and a Darfon per-key keyboard can be
+            // listed with no virtual device beside it, which left Windows repainting over us.
+            if (WinLighting.HasControl) { S.TookWinLighting = true; S.Save(); WinLighting.SetControl(false); }   // take the keyboard first or Windows overwrites us
             TryLight(delegate {
                 if (S.Light == 1) Light.SetColors(Scaled(LightColors));
                 Light.SetBacklight(S.Light == 1, 100);                                              // the level byte OGH writes; brightness is in the colours
@@ -1704,7 +1769,7 @@ namespace Ohman {
             sb.AppendLine("lighting: " + (Light == null ? "none" : Light.Describe + " mode=" + S.Light + " level=" + S.LightLevel + " colours=" + S.LightColors + " windowsControl=" + WinLighting.HasControl));
             sb.AppendLine("fan drive: written " + curLevel1 + "/" + curLevel2 + "  cpu " + Fmt(CpuTemp) + " (last single reading " + Fmt(CpuTempNow) + ")  gpu " + Fmt(GpuTemp) + "  ir " + Fmt(IrTemp) + "  guard=" + GuardActive + "  writeFailures=" + fanWriteFailures + "  route=" + Route);
             sb.AppendLine("driver: " + (DriverReady ? "PawnIO " + (Hw.IsDemo ? "simulated" : "" + DriverVersion) + " · cpu " + (Cpu != null ? Cpu.Describe : "none")
-                + " · ec " + (Ec == null ? "none" : (ecVerified ? Ec.Map.Name : "map rejected") + (Ec.Resting ? " (resting)" : "") + " u{00B7} " + EcProof) : "none (" + DriverWhy + ")"));
+                + " · ec " + (Ec == null ? "none" : (ecVerified ? Ec.Map.Name : "map rejected") + (Ec.Resting ? " (resting)" : "") + " · " + EcProof) : "none (" + DriverWhy + ")"));
             sb.AppendLine("last heartbeat: " + (LastHeartbeat == DateTime.MinValue ? "never" : LastHeartbeat.ToString("HH:mm:ss")) + "   last key event: " + (LastEventTime == DateTime.MinValue ? "none" : LastEventId + "/" + LastEventData + " at " + LastEventTime.ToString("HH:mm:ss")));
             return sb.ToString();
         }

@@ -3,6 +3,7 @@
 // otherwise, and how a binding reads and writes as text ("Ctrl+Alt+E"), so the settings file can carry the
 // owner's own and the panel can draw them.
 using System;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Input;
 
@@ -22,6 +23,24 @@ namespace Ohman {
         /// that letter away from every program on the machine.</summary>
         public bool Valid { get { return Vk != 0 && (Mods != 0 || IsFunctionKey(Vk)); } }
         static bool IsFunctionKey(uint vk) { return vk >= 0x70 && vk <= 0x87; }
+
+        /// <summary>Windows sends AltGr as Ctrl+Alt, so a Ctrl+Alt binding on a key AltGr types a letter with takes
+        /// that letter away: Ctrl+Alt+E ate every Polish "ę" and switched to Eco instead. True when this layout
+        /// types a character with the combination pressed through AltGr.</summary>
+        public bool TypesCharacter(IntPtr layout) {
+            if ((Mods & (Ctrl | Alt)) != (Ctrl | Alt) || (Mods & Win) != 0 || Vk == 0) return false;
+            try {
+                var state = new byte[256];
+                state[0x11] = state[0xA2] = state[0x12] = state[0xA5] = 0x80;       // AltGr: Ctrl, left Ctrl, Alt, right Alt
+                if ((Mods & Shift) != 0) state[0x10] = state[0xA0] = 0x80;
+                var buf = new StringBuilder(8);
+                // Flag 4: leave the keyboard's dead-key state alone, so asking does not change what gets typed next.
+                int r = ToUnicodeEx(Vk, MapVirtualKeyEx(Vk, 0, layout), state, buf, buf.Capacity, 4, layout);
+                return r < 0 || (r > 0 && buf.Length > 0 && buf[0] >= 0x20);         // r < 0 is a dead key: AltGr starts a character
+            } catch { return false; }
+        }
+        [DllImport("user32.dll")] static extern uint MapVirtualKeyEx(uint code, uint type, IntPtr hkl);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ToUnicodeEx(uint vk, uint scan, byte[] state, [Out] StringBuilder buf, int size, uint flags, IntPtr hkl);
 
         public override string ToString() {
             if (IsEmpty) return "";

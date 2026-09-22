@@ -209,7 +209,7 @@ namespace Ohman {
             try {
                 foreach (var la in LampArray.All()) {
                     try {
-                        if (la.Kind == LampArray.KindKeyboard && !string.IsNullOrEmpty(la.Path))
+                        if (la.Kind == LampArray.KindKeyboard && la.Internal && !string.IsNullOrEmpty(la.Path))
                             r.Add(la.Path.StartsWith(@"\\?\") ? la.Path.Substring(4) : la.Path);
                     } finally { try { la.Dispose(); } catch { } }
                 }
@@ -217,6 +217,12 @@ namespace Ohman {
             keyboards = r.ToArray();
             return keyboards;
         }
+
+        /// <summary>True when the laptop's own keyboard has a lighting interface Windows can drive. Reads the cache
+        /// only: the keyboard page asks this while it draws, and the enumeration belongs on the engine's thread
+        /// (Warm). Unknown reads as no.</summary>
+        public static bool KeyboardFound { get { var k = keyboards; return k != null && k.Length > 0; } }
+        public static void Warm() { Keyboards(); }
 
         /// <summary>Drop the cached HID enumeration. The device set is not fixed for the life of the process and
         /// Ohman sits in the tray for days: a dock, an undock or an external RGB keyboard being plugged in changes
@@ -246,17 +252,26 @@ namespace Ohman {
         /// its own firmware effect. That is the shape of the light bar reports.
         ///
         /// Falling back to every VHF entry when no keyboard can be identified keeps the old behaviour on any
-        /// machine this cannot work out, rather than quietly letting Windows fight us for the keyboard.</summary>
+        /// machine this cannot work out, rather than quietly letting Windows fight us for the keyboard.
+        ///
+        /// The keyboard is matched against every Dynamic Lighting entry, not only the VHF ones: a MAX 16's keyboard
+        /// is a Darfon USB device and its only VHF entry is the light bar, so with one VHF entry the old shortcut
+        /// took the bar and left the keyboard to Windows.</summary>
         static string[] DeviceKeys() {
-            var all = AllVhfKeys();
+            var vhf = AllVhfKeys();
             var kb = Keyboards();
-            if (kb.Length == 0 || all.Count <= 1) return all.ToArray();
             var mine = new List<string>();
-            foreach (string n in all)
-                foreach (string k in kb)
-                    if (string.Equals(n, k, StringComparison.OrdinalIgnoreCase)) { mine.Add(n); break; }
-            if (mine.Count == 0) return all.ToArray();
-            if (mine.Count != all.Count) Log.Write("dynamic lighting: taking " + mine.Count + " of " + all.Count + " devices (the keyboard, not the rest)");
+            int entries = 0;
+            try {
+                using (var d = Registry.CurrentUser.OpenSubKey(Root + @"\Devices"))
+                    if (d != null) foreach (string n in d.GetSubKeyNames()) {
+                        entries++;
+                        foreach (string k in kb)
+                            if (string.Equals(n, k, StringComparison.OrdinalIgnoreCase)) { mine.Add(n); break; }
+                    }
+            } catch { }
+            if (mine.Count == 0) return vhf.ToArray();
+            if (mine.Count != entries) Log.Write("dynamic lighting: taking " + mine.Count + " of " + entries + " devices (the keyboard, not the rest)");
             return mine.ToArray();
         }
         /// <summary>True when Windows has a Dynamic Lighting entry for a VHF device (HP's HyperX Lighting driver

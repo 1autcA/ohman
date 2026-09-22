@@ -88,7 +88,8 @@ namespace Ohman {
         /// under, so the match is the hardware's own; any key the device did not name falls back to the nearest lamp by
         /// position, which is what the bounding box is for. Afterwards a key's Zone is its lamp id and the rest of the
         /// app (selection, painting, effect frames, drawing) carries on in zone indices exactly as it does with four.</summary>
-        public static void BindLamps(List<KeyDef> keys, LampArray la) {
+        public static void BindLamps(List<KeyDef> keys, LampArray la) { BindLamps(keys, la, true); }
+        static void BindLamps(List<KeyDef> keys, LampArray la, bool log) {
             double maxX = 0, maxY = 0;
             foreach (var k in keys) { maxX = Math.Max(maxX, k.X + k.W); maxY = Math.Max(maxY, k.Y + k.H); }
             if (maxX <= 0 || maxY <= 0 || la.LampCount <= 0) return;
@@ -98,23 +99,72 @@ namespace Ohman {
                 if (u != 0 && u != 0xFFFF && !byUsage.ContainsKey(u)) byUsage[u] = i;
             }
             int named = 0;
+            var claimed = new bool[la.LampCount];
+            var rest = new List<KeyDef>();
             foreach (var k in keys) {
                 int lamp;
-                if (k.Usage != 0 && byUsage.TryGetValue(k.Usage, out lamp)) { k.Zone = lamp; named++; continue; }
-                k.Zone = Nearest(la, (k.X + k.W / 2) / maxX, (k.Y + k.H / 2) / maxY);
+                if (k.Usage != 0 && byUsage.TryGetValue(k.Usage, out lamp)) { k.Zone = lamp; claimed[lamp] = true; named++; }
+                else rest.Add(k);
             }
-            Log.Write("lamparray: " + named + " of " + keys.Count + " drawn keys matched a lamp by HID usage; the rest by position");
+            // By position second, and to a lamp no other key has. Fn, and the right Ctrl a MAX 16 does not have
+            // (it has Copilot there), used to land on the left arrow's lamp and paint it twice.
+            foreach (var k in rest) {
+                k.Zone = Nearest(la, (k.X + k.W / 2) / maxX, (k.Y + k.H / 2) / maxY, claimed);
+                claimed[k.Zone] = true;
+            }
+            if (log) Log.Write("lamparray: " + named + " of " + keys.Count + " drawn keys matched a lamp by HID usage; the rest by position");
         }
-        /// <summary>The lamp closest to a point given as a fraction of the board, in the device's own bounding box.</summary>
-        static int Nearest(LampArray la, double fx, double fy) {
+        /// <summary>The lamp closest to a point given as a fraction of the board, in the device's own bounding box.
+        /// An unclaimed lamp wins only when it is within a key's width of the nearest one: a key whose own lamp is
+        /// taken shares it rather than reaching across the board for a free one.</summary>
+        static int Nearest(LampArray la, double fx, double fy, bool[] claimed) {
             double want = fx * la.WidthMicrometres, wantY = fy * la.HeightMicrometres;
-            int best = 0;
-            double bestD = double.MaxValue;
+            int best = -1, any = 0;
+            double bestD = double.MaxValue, anyD = double.MaxValue;
             for (int i = 0; i < la.LampCount; i++) {
                 double dx = la.X[i] - want, dy = la.Y[i] - wantY, d = dx * dx + dy * dy;
-                if (d < bestD) { bestD = d; best = i; }
+                if (d < anyD) { anyD = d; any = i; }
+                if (!claimed[i] && d < bestD) { bestD = d; best = i; }
             }
-            return best;
+            const double Reach = 10000;                                            // micrometres, about half a key
+            return best >= 0 && Math.Sqrt(bestD) <= Math.Sqrt(anyD) + Reach ? best : any;
+        }
+
+        /// <summary>For every lamp no drawn key owns, the owned lamp it should copy: the one with the same HID usage
+        /// (a MAX 16 lights its spacebar with five lamps and the drawing has one key there), else the nearest owned
+        /// lamp on the same row, to its left first. -1 for owned lamps. The drawing is built here from the same data
+        /// the keyboard page uses, so the engine gets the same answer with no window open.</summary>
+        public static int[] Followers(LampArray la) {
+            var lead = new int[la.LampCount];
+            for (int i = 0; i < lead.Length; i++) lead[i] = -1;
+            try {
+                var keys = Build(la.LampCount > 90, la.LampCount);
+                BindLamps(keys, la, false);
+                var owned = new bool[la.LampCount];
+                foreach (var k in keys) if (k.Zone >= 0 && k.Zone < owned.Length) owned[k.Zone] = true;
+                var byUsage = new Dictionary<ushort, int>();
+                for (int i = 0; i < la.LampCount; i++) {
+                    ushort u = la.KeyUsage[i];
+                    if (owned[i] && u > 0x03 && u != 0xFFFF && !byUsage.ContainsKey(u)) byUsage[u] = i;
+                }
+                const double Row = 5000;                                                // micrometres; rows sit ~18 mm apart
+                for (int i = 0; i < la.LampCount; i++) {
+                    if (owned[i]) continue;
+                    int l;
+                    ushort u = la.KeyUsage[i];
+                    if (u > 0x03 && u != 0xFFFF && byUsage.TryGetValue(u, out l)) { lead[i] = l; continue; }
+                    int left = -1, right = -1;
+                    double leftD = double.MaxValue, rightD = double.MaxValue;
+                    for (int j = 0; j < la.LampCount; j++) {
+                        if (!owned[j] || Math.Abs(la.Y[j] - la.Y[i]) > Row) continue;
+                        double dx = la.X[j] - la.X[i];
+                        if (dx <= 0 && -dx < leftD) { leftD = -dx; left = j; }
+                        if (dx > 0 && dx < rightD) { rightD = dx; right = j; }
+                    }
+                    lead[i] = left >= 0 ? left : right;
+                }
+            } catch (Exception ex) { Log.Write("lamparray followers: " + ex.Message); }
+            return lead;
         }
 
         /// <summary>The HID usage for one drawn key. Labels alone are not enough: this layout has two Shifts, two

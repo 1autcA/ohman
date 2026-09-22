@@ -172,6 +172,13 @@ namespace Ohman {
         const int WM_HOTKEY = 0x0312;
         const uint MOD_ALT = 1, MOD_CONTROL = 2, MOD_SHIFT = 4, VK_F11 = 0x7A;   // not F12: Windows reserves it for the debugger
         [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr h, int id, uint mod, uint vk);
+        const uint MOD_NOREPEAT = 0x4000;
+        [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+        [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
+        [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
+        [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
         [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr h, int id);
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr wp, IntPtr lp);
@@ -1431,7 +1438,7 @@ namespace Ohman {
             // Reaching here means both ways in failed: HP's firmware answers and lights nothing, and this keyboard
             // offers no HID lighting interface either. Say which, so it does not read as "per-key is unsupported".
             txtKbdInfo.Text = inert && m != 2
-                ? "Ohman cannot light this keyboard. HP's firmware interface answers for per-key boards but does nothing, and this keyboard offers no lighting interface of its own. Windows Dynamic Lighting can still light it. Run Ohman.exe --lamps and open an issue with what it prints."
+                ? "Ohman cannot light this keyboard. HP's firmware interface answers for per-key boards but does nothing, and this keyboard offers no lighting interface of its own." + (WinLighting.KeyboardFound ? " Windows Dynamic Lighting can still light it." : "") + " Run Ohman.exe --lamps and open an issue with what it prints."
                 : m == 0 ? "The backlight is off. Pick a mode to turn it back on, or press the keyboard backlight key."
                 : (WinLighting.Present || E.Hw.IsDemo ? "Windows Dynamic Lighting has the keyboard. Its colours and effects come from Windows settings."
                                                       : "No Dynamic Lighting device for this keyboard was found; Windows cannot drive it.");
@@ -2121,7 +2128,9 @@ namespace Ohman {
             for (int i = 0; i < b.Length; i++) {
                 hotkeyBusy[i] = false;
                 if (b[i].IsEmpty) continue;
-                if (!RegisterHotKey(h, i + 1, b[i].Mods, b[i].Vk)) { hotkeyBusy[i] = true; Log.Write("hotkey " + b[i] + " (" + HotkeyTable.Names[i] + ") not available: another program has it"); }
+                // NOREPEAT: holding the keys a moment too long sent the hotkey again, and a toggle pressed twice is a
+                // toggle not pressed. Max fan went off and straight back on, and read as stuck on.
+                if (!RegisterHotKey(h, i + 1, b[i].Mods | MOD_NOREPEAT, b[i].Vk)) { hotkeyBusy[i] = true; Log.Write("hotkey " + b[i] + " (" + HotkeyTable.Names[i] + ") not available: another program has it"); }
             }
             hotkeysRegistered = true;
         }
@@ -2324,12 +2333,37 @@ namespace Ohman {
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) {
             if (msg == WM_HOTKEY) {
                 int id = wp.ToInt32() - 1;
+                if (id >= 0 && id < HotkeyTable.Count && PassAltGr(id)) { handled = true; return IntPtr.Zero; }
                 if (id >= 0 && id <= 2) { Flash(Engine.ModeNames[id] + " mode", ModeSubs[id], id); ApplyModeAsync(id); }
                 else if (id == (int)HotkeyAction.MaxFan) ToggleMaxWithFlash();
                 else if (id == (int)HotkeyAction.Cycle) CycleWithFlash();
                 handled = true;
             }
             return IntPtr.Zero;
+        }
+
+        /// <summary>Windows reports AltGr as Ctrl+Alt, so on a keyboard where AltGr+E is a letter the Eco hotkey took
+        /// it: a Polish owner could not type "ę". When the right Alt is held and the foreground window's layout
+        /// types a character with this combination, the key goes back to that window instead: the hotkey steps
+        /// aside, the key is sent again, and the hotkey returns a moment later. Left Ctrl+Alt still switches.</summary>
+        bool PassAltGr(int id) {
+            if ((GetAsyncKeyState(0xA5) & 0x8000) == 0) return false;          // right Alt not held: Ctrl+Alt on purpose
+            Hotkey k = E.GetHotkey((HotkeyAction)id);
+            IntPtr layout = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero));
+            if (!k.TypesCharacter(layout)) return false;
+            IntPtr h = new WindowInteropHelper(this).Handle;
+            UnregisterHotKey(h, id + 1);
+            byte scan = (byte)MapVirtualKey(k.Vk, 0);
+            keybd_event((byte)k.Vk, scan, 0, UIntPtr.Zero);
+            keybd_event((byte)k.Vk, scan, 2, UIntPtr.Zero);                     // KEYEVENTF_KEYUP
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            t.Tick += delegate {
+                t.Stop();
+                // Only if nothing re-registered or switched the hotkeys off in the meantime.
+                if (hotkeysRegistered && !exiting && E.GetHotkey((HotkeyAction)id).Same(k)) RegisterHotKey(h, id + 1, k.Mods | MOD_NOREPEAT, k.Vk);
+            };
+            t.Start();
+            return true;
         }
 
         void OnLoaded(object o, RoutedEventArgs e) {

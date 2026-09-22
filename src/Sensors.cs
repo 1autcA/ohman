@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Ohman {
@@ -95,6 +96,15 @@ namespace Ohman {
             foreach (string p in new string[] { Path.Combine(Environment.SystemDirectory, "nvidia-smi.exe"), @"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe" })
                 if (File.Exists(p)) { nvsmi = p; break; }
             if (nvsmi == null) Log.Write("nvidia-smi not found; GPU stats disabled");
+            else {
+                try {
+                    using (var q = new System.Management.ManagementObjectSearcher("SELECT PNPDeviceID FROM Win32_VideoController"))
+                        foreach (System.Management.ManagementObject o in q.Get()) {
+                            string id = "" + o["PNPDeviceID"];
+                            if (id.IndexOf("VEN_10DE", StringComparison.OrdinalIgnoreCase) >= 0) { nvDevice = id; break; }
+                        }
+                } catch (Exception ex) { Log.Write("nvidia adapter lookup: " + ex.Message); }
+            }
         }
 
         public void SetInterval(int ms) {
@@ -238,7 +248,33 @@ namespace Ohman {
         bool DueForGpu(SensorSnapshot s) {
             bool cpuBusy = !double.IsNaN(s.CpuLoad) && s.CpuLoad > 25;
             double want = gpuQuiet >= 3 && !cpuBusy ? GpuIdleMs : Math.Max(4000, intervalMs * 2);
-            return (DateTime.Now - lastNv).TotalMilliseconds >= want;
+            if ((DateTime.Now - lastNv).TotalMilliseconds < want) return false;
+            // Asking nvidia-smi anything wakes the GPU to answer, and a hybrid laptop's dGPU spends most of its day
+            // asleep. One owner saw it pinned awake at 60-100 W idle. Asleep is also the answer: it is cool.
+            // It cannot heat up while it sleeps, so its last reading stays good; without this it went stale and the
+            // Home page showed an unknown GPU temperature on every hybrid laptop idling on the iGPU.
+            if (GpuAsleep()) { lastNv = DateTime.Now; lock (sync) { if (last != null && last.GpuRead != DateTime.MinValue) last.GpuRead = DateTime.Now; } return false; }
+            return true;
+        }
+
+        // ---- the dGPU's power state, read from Windows' device record, which does not wake it
+        string nvDevice;
+        [StructLayout(LayoutKind.Sequential)] struct DevPropKey { public Guid Fmtid; public uint Pid; }
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)] static extern int CM_Locate_DevNodeW(out uint inst, string id, uint flags);
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)] static extern int CM_Get_DevNode_PropertyW(uint inst, ref DevPropKey key, out uint type, byte[] buf, ref uint size, uint flags);
+        /// <summary>True only when Windows says the NVIDIA adapter is in D3. Anything unreadable is "awake", so
+        /// the worst this does is what it did before.</summary>
+        bool GpuAsleep() {
+            if (nvDevice == null) return false;
+            try {
+                uint inst;
+                if (CM_Locate_DevNodeW(out inst, nvDevice, 0) != 0) return false;
+                var key = new DevPropKey { Fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), Pid = 32 };   // DEVPKEY_Device_PowerData
+                var buf = new byte[64];
+                uint type, size = (uint)buf.Length;
+                if (CM_Get_DevNode_PropertyW(inst, ref key, out type, buf, ref size, 0) != 0 || size < 8) return false;
+                return BitConverter.ToInt32(buf, 4) == 4;                                                             // PD_MostRecentPowerState: 4 = D3
+            } catch { return false; }
         }
         void NoteGpuActivity(SensorSnapshot s) {
             bool busy = (!double.IsNaN(s.GpuLoad) && s.GpuLoad > 1) || (!double.IsNaN(s.GpuWatts) && s.GpuWatts >= 12);

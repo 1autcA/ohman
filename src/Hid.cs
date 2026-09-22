@@ -217,7 +217,19 @@ namespace Ohman {
 
         /// <summary>True when this is a keyboard we could actually paint per key: the device says it is a keyboard,
         /// it has more lamps than a zone strip does, and it admits to being programmable.</summary>
-        public bool UsableAsPerKey { get { return Kind == KindKeyboard && LampCount >= 8 && AnyProgrammable; } }
+        public bool UsableAsPerKey { get { return Kind == KindKeyboard && LampCount >= 8 && AnyProgrammable && Internal; } }
+
+        /// <summary>The laptop's own lighting, not something plugged in. A Logitech G213 is a LampArray keyboard too:
+        /// on an OMEN 17 whose own keyboard has no lighting interface it was the one Ohman took from Windows, and a
+        /// per-key board with one plugged in would have painted it as its own. HP's virtual lighting device (it
+        /// reports Primax's id, 0461), and the makers of the built-in keyboards seen so far: Darfon (every OMEN MAX
+        /// 16), Primax, Chicony, ITE.</summary>
+        public bool Internal {
+            get {
+                if ((Path ?? "").IndexOf("HID_DEVICE_SYSTEM_VHF", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                return VendorId == 0x0D62 || VendorId == 0x0461 || VendorId == 0x04F2 || VendorId == 0x048D;
+            }
+        }
 
         /// <summary>The best per-key keyboard on this machine, or null. Everything else found is closed again.</summary>
         public static LampArray FindKeyboard() {
@@ -337,7 +349,9 @@ namespace Ohman {
         readonly LampArray lamps;
         readonly int[] ids;
         readonly Rgb[] shown;                 // HID lighting has no colour readback, so what we last wrote is all we know
+        readonly int[] leader;                // lamp whose colour each lamp copies; -1 paints its own (KeyboardLayouts.Followers)
         int backlight = 0x80 | 100;
+        bool held;                            // the device is off its own animations and showing ours
 
         public PerKeyLighting(LampArray la) {
             lamps = la;
@@ -350,8 +364,15 @@ namespace Ohman {
             // user's colours. An owner who wanted one key lit and the rest dark got a fully white keyboard, kept
             // across restarts. Black asserts nothing, and it is what "I have not set this key" should look like.
             for (int i = 0; i < la.LampCount; i++) { ids[i] = i; shown[i] = new Rgb(0, 0, 0); }
-            lamps.TakeOver(true);
+            leader = KeyboardLayouts.Followers(la);
+            Hold();
         }
+
+        void Hold() { if (held) return; lamps.TakeOver(true); held = true; }
+        /// <summary>Hand the keyboard back to its own animations. Taking it was never undone: the keyboard stayed in
+        /// host mode on our last colours after Ohman quit or was uninstalled, and OMEN Gaming Hub could not change
+        /// it back. The next write takes it again.</summary>
+        public void Release() { if (!held) return; lamps.TakeOver(false); held = false; }
 
         public LightKind Kind { get { return LightKind.PerKey; } }
         public bool Inert { get { return false; } }
@@ -371,13 +392,17 @@ namespace Ohman {
         public int GetBacklight() { return backlight; }
         public void SetBacklight(bool on, int level) {
             backlight = Math.Max(0, Math.Min(100, level)) | (on ? 0x80 : 0);
-            if (on) Paint();
-            else lamps.SetAll(new Rgb(0, 0, 0), 0);
+            Paint();
         }
 
         void Paint() {
+            Hold();
             if ((backlight & 0x80) == 0) { lamps.SetAll(new Rgb(0, 0, 0), 0); return; }
-            lamps.SetLamps(ids, shown, (backlight & 0x7F) * 255 / 100);
+            // Lamps no drawn key owns (the spacebar's other four LEDs, the second LED of wide keys, the keys HP adds
+            // beside the numpad) copy the key they sit under or beside. Painted black they read as dead keys.
+            var c = new Rgb[shown.Length];
+            for (int i = 0; i < c.Length; i++) c[i] = shown[leader[i] >= 0 ? leader[i] : i];
+            lamps.SetLamps(ids, c, (backlight & 0x7F) * 255 / 100);
         }
     }
 }

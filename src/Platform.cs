@@ -249,6 +249,7 @@ namespace Ohman {
         /// <summary>Boards whose mailbox is known to refuse a control the EC can do. Each entry is a field report.</summary>
         static readonly Dictionary<string, DriverFor> DriverNeeds = new Dictionary<string, DriverFor>(StringComparer.OrdinalIgnoreCase) {
             { "878A", DriverFor.FanLevels },     // OMEN 15 (2020): 0x2E answers rc 46 on every write, once a minute, forever; mode and max fan work
+            { "8786", DriverFor.FanLevels },     // OMEN 15-en0 (2020): the same rc 46 on 0x2E, reported on Discord
         };
 
         // A verified laptop is one entry here. Everything a profile does not say has a default on PlatformProfile,
@@ -273,7 +274,7 @@ namespace Ohman {
         /// widens the thermal guard: it lets the chassis sensor arm a trigger before the sensor has read cool
         /// once, and makes release stricter, so an unexpected sensor scale costs a noisy fan, never less cooling.</summary>
         static readonly string[] OwnerReported = { "8748", "8EEC", "8DCF", "88D2", "88EE", "8BAB", "8A26",
-                                                   "8BCD", "8BAD", "8787", "8E10", "8BBE", "8A4C", "8BB3", "8BCA", "8BD5", "8BC2", "8E35", "8C76" };
+                                                   "8BCD", "8BAD", "8787", "8E10", "8BBE", "8A4C", "8BB3", "8BCA", "8BD5", "8BC2", "8E35", "8C76", "8A25", "8D87" };
         public static bool Reported(string board) { return Families.In(OwnerReported, board); }
 
         public static string BoardOverride;         // --board: test aid

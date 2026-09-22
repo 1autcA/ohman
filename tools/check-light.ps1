@@ -4,8 +4,9 @@
 # touches no fans, modes or power. Writes ohman-light.txt to the Desktop.
 $ErrorActionPreference = 'Continue'
 if ($PSVersionTable.PSEdition -eq 'Core') {
-    # HP's firmware calls need Windows PowerShell's WMI objects; PowerShell 7 does not have them.
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/P4R1H/ohman/main/tools/check-light.ps1 | iex"; return
+    # HP's firmware calls need Windows PowerShell's WMI objects; PowerShell 7 does not have them. Say so rather than
+    # relaunching: a script that starts powershell.exe with a download-and-run command is what Defender blocks as ClickFix.
+    Write-Host "This one needs Windows PowerShell. Search the Start menu for Windows PowerShell, right click it, Run as administrator, and paste the line there." -ForegroundColor Yellow; return
 }
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrator')) {
     Write-Host "Please open Terminal (Admin) and paste the line again." -ForegroundColor Yellow; return

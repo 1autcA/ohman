@@ -1240,10 +1240,11 @@ namespace Ohman {
         void ApplyGpuCore() {
             if (!P.HasGpuPower) return;
             GpuLevel g = EffectiveGpu;
-            // Base follows OGH: Eco is the low-power payload; Balanced/Performance request cTGP without PPAB.
+            // Base follows OGH: only Performance (mode 0x31) requests cTGP without PPAB. Eco and Balanced both run
+            // firmware mode 0x30, which keeps the cTGP bit but never raises the GPU limit, so they use the standard payload.
             // Boost is the old Max payload. A machine that rejects or does not retain cTGP gets the same request
             // with only that bit cleared, and the result is cached for this session so Base never repeatedly fails.
-            byte[] p = g == GpuLevel.Boost ? P.GpuBoost : ModeIndex == 0 ? P.GpuBase : P.GpuBaseCtgp;
+            byte[] p = g == GpuLevel.Boost ? P.GpuBoost : ModeIndex == 2 ? P.GpuBaseCtgp : P.GpuBase;
             ApplyGpuPayload(p);
         }
 

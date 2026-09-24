@@ -621,7 +621,7 @@ namespace Ohman {
                 keyCmdRow.Visibility = a == KeyAction.Run ? Visibility.Visible : Visibility.Collapsed;
             };
             gpuSeg = new Seg(new[] { "Base", "Boost", "Auto" },
-                new[] { "Eco uses the standard limit; Balanced and Performance request cTGP without borrowing",
+                new[] { "Performance requests cTGP without borrowing; Eco and Balanced use the standard limit",
                         "Uses cTGP and lets the GPU borrow power from the CPU",
                         "Base in Eco and Balanced, Boost in Performance" }, null, Seg.Kind.Row);
             F<Border>("GpuSegHost").Child = gpuSeg;
@@ -1920,7 +1920,7 @@ namespace Ohman {
                 fanLinks.SetText(2, S.Fan == FanMode.Custom ? "Curve" : "Manual");
                 fanLinks.Select(S.Fan == FanMode.Auto ? 0 : S.Fan == FanMode.Max ? 1 : 2, IsVisible);
                 if (pollSeg != null) pollSeg.Select(S.PollMs <= 500 ? 0 : S.PollMs <= 1000 ? 1 : 2, IsVisible && cur == Page.Settings);
-                if (gpuSeg != null) { gpuSeg.Select(S.GpuAuto ? 2 : (int)g, IsVisible && cur == Page.Settings); txtGpuSub.Text = S.GpuAuto ? "Follows the mode" : g == GpuLevel.Boost ? "cTGP + PPAB" : mi == 0 ? "Standard TGP" : "cTGP, no PPAB"; }
+                if (gpuSeg != null) { gpuSeg.Select(S.GpuAuto ? 2 : (int)g, IsVisible && cur == Page.Settings); txtGpuSub.Text = S.GpuAuto ? "Follows the mode" : g == GpuLevel.Boost ? "cTGP + PPAB" : mi == 2 ? "cTGP, no PPAB" : "Standard TGP"; }
                 RefreshLighting();
                 if (cur == Page.Fans) RefreshFans(true);
                 keySeg.Select(Choice.Of(S.Key), IsVisible && cur == Page.Settings);
